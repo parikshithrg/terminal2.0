@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Workspace 2.0 — a compact Koyfin-inspired EOD market intelligence workspace.">
+  <title>Workspace 2.0</title>
+  <link rel="stylesheet" href="styles.css?v=leadership-columns-v30">
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">Skip to content</a>
+
+  <header class="topbar">
+    <div class="brand" aria-label="Workspace 2.0">
+      <span class="brand-mark">W2</span>
+      <div><strong>Workspace 2.0</strong><span>Market intelligence</span></div>
+    </div>
+    <div class="market-session" aria-label="Market session">
+      <span class="pulse-dot" aria-hidden="true"></span>
+      <div><strong>INDIA EOD</strong><span id="sessionAsOf">Awaiting local data</span></div>
+    </div>
+    <div class="topbar-actions">
+      <span class="source-state" id="sourceState"><i></i>Checking data engine</span>
+      <button class="kite-button" id="kiteLoginButton" type="button" aria-expanded="false" aria-controls="kitePanel">Kite login</button>
+      <button class="icon-button" id="themeToggle" type="button" aria-label="Switch to light theme">☼</button>
+      <button class="primary-button" id="refreshButton" type="button">Refresh data</button>
+    </div>
+  </header>
+
+  <section class="kite-panel" id="kitePanel" aria-label="Kite API connection" hidden>
+    <div class="kite-panel-head">
+      <div><span class="eyebrow">ZERODHA KITE API</span><strong>Connect completed-session market data</strong></div>
+      <button class="icon-button" id="kiteCloseButton" type="button" aria-label="Close Kite login">×</button>
+    </div>
+    <p>Use your Kite Connect app credentials. Generate a fresh request token for every connection: Kite request tokens expire quickly and can be used only once. Credentials and the daily access token remain in local process memory and are not saved.</p>
+    <form id="kiteCredentialForm" autocomplete="off">
+      <label>API key<input id="kiteApiKey" name="apiKey" type="text" maxlength="256" required spellcheck="false"></label>
+      <label>API secret<input id="kiteApiSecret" name="apiSecret" type="password" maxlength="512" required></label>
+      <label class="kite-token-field">Request token or complete redirect URL<input id="kiteRequestToken" name="requestToken" type="text" maxlength="4096" required spellcheck="false"></label>
+      <div class="kite-panel-actions">
+        <button class="secondary-button" id="openKiteLoginButton" type="button">Open official Kite login</button>
+        <button class="primary-button" id="kiteConnectButton" type="submit">Connect to Kite</button>
+        <button class="secondary-button danger" id="kiteDisconnectButton" type="button" hidden>Disconnect</button>
+      </div>
+    </form>
+    <small>Open Kite login, complete authentication, then immediately paste the returned redirect URL. Refresh data sources index, NIFTY 500 breadth and futures EOD inputs directly from Kite.</small>
+  </section>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <nav>
+        <button class="nav-item active" id="dashboardNav" type="button"><span>01</span>Dashboard</button>
+        <div class="nav-group-label">Market intelligence</div>
+        <button class="nav-item" id="marketStateNav" type="button"><span>02</span>Market state</button>
+        <button class="nav-item" id="fnoNav" type="button"><span>03</span>F&amp;O positioning</button>
+        <button class="nav-item" id="stockResearchNav" type="button"><span>04</span>Stock research</button>
+        <div class="nav-group-label">Capital</div>
+        <button class="nav-item future" type="button" disabled><span>05</span>Portfolio</button>
+        <button class="nav-item future" type="button" disabled><span>06</span>Historical regimes</button>
+      </nav>
+      <div class="sidebar-foot">
+        <span>DATA SOURCE</span>
+        <strong>Workspace data</strong>
+        <small>Independent local EOD store</small>
+      </div>
+    </aside>
+
+    <main id="mainContent">
+      <div class="page-view active" id="dashboardView">
+      <section class="page-heading">
+        <div>
+          <span class="eyebrow">EXECUTIVE WORKSPACE / DASHBOARD</span>
+          <h1>India market close</h1>
+        </div>
+        <div class="heading-meta">
+          <span>Completed-session evidence</span>
+          <strong id="dashboardAsOf">—</strong>
+        </div>
+      </section>
+
+      <section class="market-overview-panel" aria-label="Market headline metrics and risk map">
+        <div class="ticker-strip" aria-label="Market headline metrics">
+          <article><span>MARKET REGIME</span><strong id="tickerRegime">Loading</strong><small id="tickerRegimeScore">Score —</small></article>
+          <article><span>NIFTY 50 CLOSE</span><strong id="tickerClose">—</strong><small id="tickerCloseAsOf">YTD — · Local history</small></article>
+          <article><span>PARTICIPATION</span><strong id="tickerBreadth">—</strong><small id="tickerBreadthMeta">Above 50DMA / 200DMA</small></article>
+          <article><span>F&amp;O BALANCE</span><strong id="tickerFno">— / — / —</strong><small id="tickerFnoMeta">Bullish / bearish / neutral states</small></article>
+          <article><span>EVIDENCE</span><strong id="tickerEvidence">— / 6</strong><small id="tickerEvidenceMeta">Validated clusters</small></article>
+        </div>
+
+        <article class="regime-panel">
+          <header class="card-header"><div><span class="card-kicker">RISK MAP</span><h2>Validated regime</h2></div></header>
+          <div class="regime-score"><strong id="regimeScore">—</strong><span id="regimeLabel">Unclassified</span></div>
+          <div class="risk-scale" aria-hidden="true"><i></i><span id="riskMarker"></span></div>
+          <div class="scale-labels"><span>Risk-off</span><span>Balanced</span><span>Risk-on</span></div>
+          <dl class="compact-facts">
+            <div><dt>As of</dt><dd id="regimeAsOf">—</dd></div>
+            <div><dt>Evidence</dt><dd id="regimeEvidence">—</dd></div>
+            <div><dt>Source</dt><dd>Local close</dd></div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="card executive-card span-12">
+          <header class="card-header">
+            <div><span class="card-kicker">MARKET NARRATIVE</span><h2 id="storyHeadline">Building the current market story</h2></div>
+            <span class="state-pill neutral" id="storyConfidence">Loading</span>
+          </header>
+          <p class="lead-copy" id="storyNarrative">Reading the latest completed-session evidence from the independent Workspace data engine.</p>
+          <div class="signal-grid" id="signalGrid" aria-label="Market signals">
+            <div class="empty-state">Validated signal tiles will appear here.</div>
+          </div>
+        </article>
+
+        <article class="card supplement-card span-6">
+          <header class="card-header">
+            <div><span class="card-kicker">NIFTY 500 EQUITY FACTORS</span><h2>NIFTY 500 size × style performance</h2></div>
+            <span class="micro-copy" id="factorPanelAsOf">Contract pending</span>
+          </header>
+          <div class="factor-axis-label">NIFTY 500 completed-session return</div>
+          <div class="factor-heatmap" aria-label="NIFTY 500 equity size and style factor performance">
+            <span></span><strong>Value</strong><strong>Core</strong><strong>Growth</strong>
+            <strong>Large</strong><button type="button" id="factorLargeValue" data-factor-size="Large" data-factor-style="Value" disabled>—</button><button type="button" id="factorLargeCore" data-factor-size="Large" data-factor-style="Core" disabled>—</button><button type="button" id="factorLargeGrowth" data-factor-size="Large" data-factor-style="Growth" disabled>—</button>
+            <strong>Mid</strong><button type="button" id="factorMidValue" data-factor-size="Mid" data-factor-style="Value" disabled>—</button><button type="button" id="factorMidCore" data-factor-size="Mid" data-factor-style="Core" disabled>—</button><button type="button" id="factorMidGrowth" data-factor-size="Mid" data-factor-style="Growth" disabled>—</button>
+            <strong>Small</strong><button type="button" id="factorSmallValue" data-factor-size="Small" data-factor-style="Value" disabled>—</button><button type="button" id="factorSmallCore" data-factor-size="Small" data-factor-style="Core" disabled>—</button><button type="button" id="factorSmallGrowth" data-factor-size="Small" data-factor-style="Growth" disabled>—</button>
+          </div>
+          <p class="supplement-note" id="factorPanelNote">Waiting for dated NIFTY 500 membership plus point-in-time market-cap and value/core/growth classification evidence.</p>
+        </article>
+
+        <article class="card supplement-card span-6">
+          <header class="card-header">
+            <div><span class="card-kicker">GLOBAL YIELDS</span><h2>Sovereign curve monitor</h2></div>
+            <span class="micro-copy" id="yieldPanelAsOf">Local EOD</span>
+          </header>
+          <div class="yield-table" role="table" aria-label="Global sovereign yields">
+            <div class="yield-row header" role="row"><span>Market / observation</span><span>2Y</span><span>5Y</span><span>10Y</span><span>30Y</span></div>
+            <div class="yield-row india" role="row" data-market="India"><strong><i class="flag india-flag" aria-hidden="true"></i><span>India<small data-observation-date>—</small></span></strong><span data-tenor="2">—</span><span data-tenor="5">—</span><span data-tenor="10">—</span><span data-tenor="30">—</span></div>
+            <div class="yield-row" role="row" data-market="United States"><strong><i class="flag us-flag" aria-hidden="true"></i><span>United States<small data-observation-date>—</small></span></strong><span data-tenor="2">—</span><span data-tenor="5">—</span><span data-tenor="10">—</span><span data-tenor="30">—</span></div>
+            <div class="yield-row" role="row" data-market="Germany"><strong><i class="flag eu-flag" aria-hidden="true"></i><span>Germany<small data-observation-date>—</small></span></strong><span data-tenor="2">—</span><span data-tenor="5">—</span><span data-tenor="10">—</span><span data-tenor="30">—</span></div>
+            <div class="yield-row" role="row" data-market="United Kingdom"><strong><i class="flag uk-flag" aria-hidden="true"></i><span>United Kingdom<small data-observation-date>—</small></span></strong><span data-tenor="2">—</span><span data-tenor="5">—</span><span data-tenor="10">—</span><span data-tenor="30">—</span></div>
+            <div class="yield-row" role="row" data-market="Japan"><strong><i class="flag jp-flag" aria-hidden="true"></i><span>Japan<small data-observation-date>—</small></span></strong><span data-tenor="2">—</span><span data-tenor="5">—</span><span data-tenor="10">—</span><span data-tenor="30">—</span></div>
+          </div>
+          <p class="supplement-note" id="yieldPanelNote">Official sovereign-curve observations are stored in the Workspace snapshot database.</p>
+        </article>
+
+        <article class="card span-7">
+          <header class="card-header">
+            <div><span class="card-kicker">RELATIVE STRENGTH</span><h2>Leadership board</h2></div>
+            <span class="micro-copy" id="relativeBenchmark">Relative-return window unavailable · Benchmark: Nifty 50</span>
+          </header>
+          <div class="leadership-grid" id="leadershipGrid">
+            <div class="empty-state">Connect Kite and refresh Workspace EOD data to populate leadership.</div>
+          </div>
+        </article>
+
+        <article class="card span-5">
+          <header class="card-header"><div><span class="card-kicker">CATALYSTS</span><h2>Next decision windows</h2></div></header>
+          <div class="event-list" id="eventList"><div class="empty-state">Reviewed macro events will appear here.</div></div>
+          <div class="seasonality-note" id="seasonalityNote">Seasonality context is unavailable.</div>
+        </article>
+
+        <article class="card span-8">
+          <header class="card-header"><div><span class="card-kicker">RESEARCH PIPELINE</span><h2>Workspace readiness</h2></div></header>
+          <div class="readiness-table" role="table" aria-label="Workspace readiness">
+            <div class="table-row header" role="row"><span>Module</span><span>State</span><span>Primary observation</span><span>Coverage</span></div>
+            <div class="table-row" role="row"><strong>Market sentiment</strong><span id="sentimentState">Loading</span><span id="sentimentObservation">Awaiting evidence</span><b id="sentimentCoverage">—</b></div>
+            <div class="table-row" role="row"><strong>F&amp;O positioning</strong><span id="fnoState">Loading</span><span id="fnoObservation">Awaiting contract history</span><b id="fnoCoverage">—</b></div>
+            <div class="table-row" role="row"><strong>Stock screen</strong><span id="screenState">Loading</span><span id="screenObservation">Awaiting local screen</span><b id="screenCoverage">—</b></div>
+          </div>
+        </article>
+
+        <article class="card span-4">
+          <header class="card-header"><div><span class="card-kicker">SYSTEM INTEGRITY</span><h2>Evidence status</h2></div></header>
+          <div class="integrity-stack">
+            <div><span>Data contract</span><strong id="contractVersion">—</strong></div>
+            <div><span>Latest session</span><strong id="latestSession">—</strong></div>
+            <div><span>Data engine</span><strong id="engineState">Checking</strong></div>
+          </div>
+          <p class="limitation">Observations are descriptive EOD evidence. They are not forecasts, orders, or automatic trade instructions.</p>
+        </article>
+      </section>
+      </div>
+
+      <div class="page-view" id="marketStateView" hidden>
+        <section class="page-heading">
+          <div>
+            <span class="eyebrow">MARKET INTELLIGENCE / MARKET STATE</span>
+            <h1>Regime, participation and validation</h1>
+          </div>
+          <div class="heading-meta">
+            <span>Completed-session evidence</span>
+            <strong id="stateAsOf">—</strong>
+          </div>
+        </section>
+
+        <section class="state-summary-strip" aria-label="Market state headline metrics">
+          <article><span>REGIME</span><strong id="stateRegime">—</strong><small id="stateRegimeScore">Score —</small></article>
+          <article><span>50DMA PARTICIPATION</span><strong id="stateAbove50">—</strong><small id="stateAbove50Count">— stocks evaluated</small></article>
+          <article><span>200DMA PARTICIPATION</span><strong id="stateAbove200">—</strong><small id="stateAbove200Count">— stocks evaluated</small></article>
+          <article><span>20-SESSION TAPE</span><strong id="stateTape">—</strong><small id="stateTapeCount">— positive stocks</small></article>
+          <article><span>VOLATILITY</span><strong id="stateVolatility">—</strong><small>Realised-volatility percentile</small></article>
+          <article><span>EVIDENCE</span><strong id="stateCoverage">—</strong><small id="stateCoverageMeta">Validated clusters</small></article>
+        </section>
+
+        <section class="market-state-grid">
+          <article class="card state-story-card span-8">
+            <header class="card-header">
+              <div><span class="card-kicker">STATE SUMMARY</span><h2 id="stateHeadline">Reading the current market state</h2></div>
+              <span class="state-pill neutral" id="stateConfidence">Loading</span>
+            </header>
+            <p class="lead-copy" id="stateNarrative">Loading the latest validated completed-session evidence.</p>
+            <div class="evidence-cluster-grid" id="stateEvidenceGrid"></div>
+          </article>
+
+          <article class="card span-4 compact-analogue-card">
+            <header class="card-header">
+              <div><span class="card-kicker">HISTORICAL VALIDATION</span><h2 id="stateAnalogueTitle">Comparable regime outcomes</h2></div>
+              <span class="micro-copy" id="stateAnalogueSample">— sessions</span>
+            </header>
+            <div class="analogue-grid" id="stateAnalogueGrid"><div class="empty-state">Historical analogue evidence is unavailable.</div></div>
+            <p class="supplement-note" id="stateAnalogueMethod">Trailing-only regime classifications; descriptive, not a forecast.</p>
+          </article>
+
+          <article class="card span-12 cross-asset-card">
+            <header class="card-header"><div><span class="card-kicker">CROSS-ASSET CONTEXT</span><h2>Rates, flows and global risk</h2></div></header>
+            <div class="context-stack" id="stateContextStack"><div class="empty-state">Cross-asset observations are unavailable.</div></div>
+          </article>
+
+          <article class="card span-12 market-seasonality-card">
+            <header class="card-header">
+              <div><span class="card-kicker">SEASONALITY</span><h2 id="stateSeasonalityTitle">Current-month historical context</h2></div>
+              <span class="micro-copy" id="stateSeasonalityAsOf">Stored index history</span>
+            </header>
+            <div class="seasonality-context-grid">
+              <article><span>NIFTY 50 MONTHLY AVERAGE</span><strong id="stateSeasonalityAverage">—</strong><p id="stateSeasonalityAverageMeta">Awaiting completed historical months.</p></article>
+              <article><span>LEADING INDEX</span><strong id="stateSeasonalityLeader">—</strong><p id="stateSeasonalityLeaderMeta">Awaiting comparable index history.</p></article>
+              <article><span>LAGGING INDEX</span><strong id="stateSeasonalityLagger">—</strong><p id="stateSeasonalityLaggerMeta">Awaiting comparable index history.</p></article>
+            </div>
+            <p class="supplement-note" id="stateSeasonalityNote">Historical calendar-month averages are descriptive and exclude the current incomplete month.</p>
+          </article>
+
+          <details class="card span-12 state-audit-card state-audit-disclosure">
+            <summary>
+              <span><span class="card-kicker">EVIDENCE AUDIT</span><strong>Coverage and decision boundary</strong></span>
+              <span class="audit-summary-meta"><span class="micro-copy">No forecasts · no trade instructions</span><i aria-hidden="true"></i></span>
+            </summary>
+            <div class="state-audit-table" id="stateAuditTable"></div>
+          </details>
+        </section>
+      </div>
+
+      <div class="page-view" id="fnoPositioningView" hidden>
+        <section class="page-heading">
+          <div>
+            <span class="eyebrow">MARKET INTELLIGENCE / F&amp;O POSITIONING</span>
+            <h1>Near-month futures positioning</h1>
+          </div>
+          <div class="heading-meta"><span>Same-contract EOD comparison</span><strong id="fnoPageAsOf">—</strong></div>
+        </section>
+
+        <section class="fno-summary-strip" aria-label="F&O coverage summary">
+          <article><span>LATEST COVERAGE</span><strong id="fnoPageCoverage">—</strong><small id="fnoPageCoveragePct">— of universe</small></article>
+          <article><span>COMPARABLE</span><strong id="fnoPageComparable">—</strong><small>Same-contract observations</small></article>
+          <article><span>STORED HISTORY</span><strong id="fnoPageHistory">—</strong><small id="fnoPageHistoryGate">252 sessions required</small></article>
+          <article><span>ROLLOVER BASELINES</span><strong id="fnoPageRollovers">—</strong><small>Not read as direction</small></article>
+          <article><span>CLASSIFICATION</span><strong id="fnoPageClassStatus">—</strong><small>Descriptive only</small></article>
+        </section>
+
+        <section class="fno-grid">
+          <article class="card span-12 fno-map-card">
+            <header class="card-header">
+              <div><span class="card-kicker">PRICE × OPEN INTEREST</span><h2>Positioning quadrants</h2></div>
+              <span class="state-pill neutral" id="fnoPageRead">Awaiting comparison</span>
+            </header>
+            <p class="lead-copy" id="fnoPageContext">Two completed observations of the same contract are required.</p>
+            <div class="fno-quadrants" id="fnoQuadrants"></div>
+            <div class="fno-noise-note" id="fnoNoiseNote">Noise safeguards will appear with data.</div>
+          </article>
+
+          <article class="card span-8 fno-movement-card">
+            <header class="card-header">
+              <div><span class="card-kicker">MOVEMENT ATTRIBUTION</span><h2>Build-up versus position closure</h2></div>
+              <span class="state-pill neutral" id="fnoMovementRead">Awaiting comparison</span>
+            </header>
+            <p class="lead-copy" id="fnoMovementContext">Classifying rising and falling stocks by whether open interest was added or reduced.</p>
+            <div class="fno-movement-grid" id="fnoMovementAttribution"></div>
+            <p class="supplement-note" id="fnoMovementNote">Same-contract completed-session comparison after price and open-interest noise safeguards.</p>
+          </article>
+
+          <article class="card span-4">
+            <header class="card-header"><div><span class="card-kicker">HISTORY GATE</span><h2>Directional confirmation</h2></div></header>
+            <div class="history-gate">
+              <strong id="fnoHistoryProgress">—</strong><span>stored sessions</span>
+              <div class="history-track"><i id="fnoHistoryBar"></i></div>
+              <p id="fnoHistoryReason">The page reports current positioning, not a directional forecast.</p>
+            </div>
+            <div class="integrity-stack fno-integrity">
+              <div><span>Stale gaps</span><strong id="fnoStaleGaps">—</strong></div>
+              <div><span>Liquidity exclusions</span><strong id="fnoLiquidityExcluded">—</strong></div>
+              <div><span>Latest missing</span><strong id="fnoLatestMissing">—</strong></div>
+              <div><span>Regime score</span><strong>Disabled</strong></div>
+            </div>
+          </article>
+
+          <article class="card span-6">
+            <header class="card-header"><div><span class="card-kicker">PRICE LEADERS</span><h2>Largest absolute moves</h2></div><span class="micro-copy">Top eligible contracts</span></header>
+            <div class="fno-leader-list" id="fnoPriceLeaders"></div>
+          </article>
+
+          <article class="card span-6">
+            <header class="card-header"><div><span class="card-kicker">OPEN-INTEREST LEADERS</span><h2>Largest OI changes</h2></div><span class="micro-copy">Top eligible contracts</span></header>
+            <div class="fno-leader-list" id="fnoOiLeaders"></div>
+          </article>
+
+          <article class="card span-12 fno-table-card">
+            <header class="card-header">
+              <div><span class="card-kicker">CONTRACT DETAIL</span><h2>Current futures observations</h2></div>
+              <label class="fno-filter">Classification
+                <select id="fnoStateFilter">
+                  <option value="all">All observations</option>
+                  <option value="long_build_up">Long build-up</option>
+                  <option value="short_build_up">Short build-up</option>
+                  <option value="long_unwinding">Long unwinding</option>
+                  <option value="short_covering">Short covering</option>
+                  <option value="no_clear_signal">No clear signal</option>
+                </select>
+              </label>
+            </header>
+            <p class="table-guide"><strong>How to read:</strong> price and OI rising together is long build-up; price falling with OI rising is short build-up; both falling is long unwinding; price rising with OI falling is short covering.</p>
+            <div class="fno-table-wrap">
+              <table class="fno-table">
+                <colgroup>
+                  <col class="fno-col-stock">
+                  <col class="fno-col-state">
+                  <col class="fno-col-price">
+                  <col class="fno-col-oi">
+                  <col class="fno-col-volume">
+                  <col class="fno-col-open-interest">
+                  <col class="fno-col-expiry">
+                </colgroup>
+                <thead><tr>
+                  <th><button type="button" data-fno-sort="underlying">Stock <span></span></button></th>
+                  <th><button type="button" data-fno-sort="state">State <span></span></button></th>
+                  <th><button type="button" data-fno-sort="price_change_pct">Price % <span></span></button></th>
+                  <th><button type="button" data-fno-sort="oi_change_pct">OI % <span></span></button></th>
+                  <th><button type="button" data-fno-sort="volume">Volume <span></span></button></th>
+                  <th><button type="button" data-fno-sort="open_interest">Open interest <span></span></button></th>
+                  <th><button type="button" data-fno-sort="expiry">Expiry <span></span></button></th>
+                </tr></thead>
+                <tbody id="fnoTableBody"><tr><td colspan="7">Loading current futures observations.</td></tr></tbody>
+              </table>
+            </div>
+            <p class="supplement-note" id="fnoTableNote">Descriptive EOD evidence only. No order placement or regime-score effect.</p>
+          </article>
+        </section>
+      </div>
+
+      <div class="page-view" id="stockResearchView" hidden>
+        <section class="page-heading">
+          <div>
+            <span class="eyebrow">MARKET INTELLIGENCE / STOCK RESEARCH</span>
+            <h1>Completed-session stock evidence</h1>
+          </div>
+          <div class="heading-meta"><span>Research data through</span><strong id="researchAsOf">—</strong></div>
+        </section>
+
+        <section class="research-summary-strip" aria-label="Stock research coverage summary">
+          <article><span>UNIVERSE</span><strong id="researchUniverseCount">—</strong><small id="researchUniverseName">NIFTY 500 stocks</small></article>
+          <article><span>READY</span><strong id="researchReadyCount">—</strong><small>Completed-session evidence</small></article>
+          <article><span>ABOVE 200DMA</span><strong id="researchAbove200Count">—</strong><small id="researchAbove200Share">— of ready stocks</small></article>
+          <article><span>POSITIVE RETURN</span><strong id="researchPositiveCount">—</strong><small id="researchReturnWindow">Selected return window</small></article>
+          <article><span>RESEARCH ELIGIBLE</span><strong id="researchEligibleCount">—</strong><small id="researchEligibleMeta">Liquidity and history gates</small></article>
+        </section>
+
+        <section class="research-grid">
+          <article class="card span-12 research-controls-card">
+            <div class="research-controls">
+              <label>Universe
+                <select id="researchUniverse">
+                  <option value="nifty500">NIFTY 500</option>
+                  <option value="fno">F&amp;O research universe</option>
+                </select>
+              </label>
+              <label>Search
+                <input id="researchSearch" type="search" placeholder="Symbol or company" autocomplete="off">
+              </label>
+              <label>Sector
+                <select id="researchSector"><option value="all">All sectors</option></select>
+              </label>
+              <label>Evidence state
+                <select id="researchState">
+                  <option value="all">All stocks</option>
+                  <option value="ready">Calculation ready</option>
+                  <option value="above_200">Above 200DMA</option>
+                  <option value="below_200">Below 200DMA</option>
+                  <option value="positive_return">Positive selected return</option>
+                  <option value="eligible">Research eligible</option>
+                </select>
+              </label>
+              <button class="secondary-button" id="researchReset" type="button">Reset filters</button>
+            </div>
+            <div class="research-rank-controls" aria-label="Backtest ranking controls">
+              <label>Backtest engine
+                <select id="researchRankModel">
+                  <optgroup label="Trend following">
+                    <option value="sma">20/50 SMA crossover</option>
+                    <option value="donchian">55/20 Donchian breakout</option>
+                    <option value="ema">20/50 EMA crossover</option>
+                    <option value="momentum">63-session absolute momentum</option>
+                    <option value="triple">20/50/200 triple-SMA alignment</option>
+                  </optgroup>
+                  <optgroup label="Mean reversion">
+                    <option value="rsiReversion">RSI(2) oversold recovery</option>
+                    <option value="bollingerReversion">20-session Bollinger re-entry</option>
+                    <option value="zscoreReversion">10-session price z-score reversal</option>
+                    <option value="pullbackReversion">5/200 pullback in uptrend</option>
+                    <option value="selloffReversion">3-day selloff recovery</option>
+                  </optgroup>
+                </select>
+              </label>
+              <label>Profit factor order
+                <select id="researchProfitOrder">
+                  <option value="desc">Highest first</option>
+                  <option value="asc">Lowest first</option>
+                </select>
+              </label>
+              <span class="research-rank-status" id="researchRankStatus" role="status">20/50-session SMA evidence ready</span>
+            </div>
+            <p class="research-boundary"><strong>Research boundary:</strong> this page ranks and filters observed price evidence. It does not issue a buy, sell, target price, position size, or order instruction.</p>
+          </article>
+
+          <article class="card span-12 research-table-card">
+            <header class="card-header">
+              <div><span class="card-kicker">STOCK EVIDENCE</span><h2 id="researchTableTitle">NIFTY 500 research table</h2></div>
+              <span class="micro-copy" id="researchResultCount">— results</span>
+            </header>
+            <div class="research-table-wrap" id="researchTableWrap">
+              <table class="research-table">
+                <thead><tr>
+                  <th><button type="button" data-research-sort="symbol">Stock <span></span></button></th>
+                  <th><button type="button" data-research-sort="sector">Sector <span></span></button></th>
+                  <th><button type="button" data-research-sort="close">Price <span></span></button></th>
+                  <th><button type="button" data-research-sort="primaryReturn"><span id="researchReturnLabel">YTD return</span> <i></i></button></th>
+                  <th><button type="button" data-research-sort="secondaryReturn"><span id="researchSecondaryLabel">Vs 20DMA</span> <i></i></button></th>
+                  <th><button type="button" data-research-sort="vs50">Vs 50DMA <span></span></button></th>
+                  <th><button type="button" data-research-sort="vs200">Vs 200DMA <span></span></button></th>
+                  <th><button type="button" data-research-sort="status">Evidence <span></span></button></th>
+                  <th><button type="button" data-research-sort="profitFactor"><span id="researchBacktestColumnLabel">SMA PF / p-value</span> <i></i></button></th>
+                </tr></thead>
+                <tbody id="researchTableBody"><tr><td colspan="9">Loading stock evidence.</td></tr></tbody>
+              </table>
+            </div>
+            <footer class="research-table-footer">
+              <span id="researchCoverageNote">Waiting for the completed-session universe.</span>
+              <span>Click a stock symbol for its evidence summary.</span>
+            </footer>
+          </article>
+
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog class="factor-dialog" id="factorDialog" aria-labelledby="factorDialogTitle">
+    <div class="factor-dialog-shell">
+      <header class="factor-dialog-head">
+        <div>
+          <span class="card-kicker">NIFTY 500 FACTOR CONSTITUENTS</span>
+          <h2 id="factorDialogTitle">Factor cohort</h2>
+          <p id="factorDialogMeta">Completed-session evidence</p>
+        </div>
+        <button class="icon-button" id="factorDialogClose" type="button" aria-label="Close factor constituents">×</button>
+      </header>
+      <div class="factor-dialog-summary" id="factorDialogSummary"></div>
+      <div class="factor-dialog-tools">
+        <label>Filter stocks<input id="factorDialogSearch" type="search" placeholder="Symbol, company or industry" autocomplete="off"></label>
+        <span id="factorDialogCount">— stocks</span>
+      </div>
+      <div class="factor-dialog-table-wrap">
+        <table class="factor-dialog-table">
+          <thead><tr>
+            <th><button type="button" data-factor-sort="symbol">Stock <span></span></button></th>
+            <th><button type="button" data-factor-sort="industry">Industry <span></span></button></th>
+            <th><button type="button" data-factor-sort="close_price">Close <span></span></button></th>
+            <th><button type="button" data-factor-sort="return_pct">Session <span></span></button></th>
+            <th><button type="button" data-factor-sort="value_score">Value score <span></span></button></th>
+            <th><button type="button" data-factor-sort="growth_score">Growth score <span></span></button></th>
+            <th>Reporting evidence</th>
+          </tr></thead>
+          <tbody id="factorDialogBody"><tr><td colspan="7">Select a factor cell to load its admitted stocks.</td></tr></tbody>
+        </table>
+      </div>
+      <footer class="factor-dialog-foot">Point-in-time classifications and completed-session returns only. This drill-down does not issue a trade recommendation or place an order.</footer>
+    </div>
+  </dialog>
+
+  <dialog class="stock-detail-dialog" id="researchDetailDialog" aria-labelledby="researchDetailTitle">
+    <div class="stock-detail-dialog-shell">
+      <header class="stock-detail-dialog-head">
+        <div>
+          <span class="card-kicker">STOCK EVIDENCE</span>
+          <h2 id="researchDetailTitle">Selected stock</h2>
+          <p>Completed-session price, trend and research-gate evidence</p>
+        </div>
+        <div class="research-detail-actions">
+          <span class="state-pill neutral" id="researchDetailState">No selection</span>
+          <button class="icon-button" id="researchDetailClose" type="button" aria-label="Close stock evidence">&times;</button>
+        </div>
+      </header>
+      <div class="stock-detail-dialog-body">
+        <div class="research-detail-grid" id="researchDetailGrid"></div>
+        <div class="research-detail-command">
+          <div>
+            <span class="card-kicker">BACKGROUND STRATEGY ENGINE</span>
+            <p>Inspect the selected model without leaving the stock-research table.</p>
+          </div>
+          <button class="secondary-button research-backtest-trigger" id="researchBacktestButton" type="button" aria-expanded="false" aria-controls="researchBacktestPanel">View backtest evidence</button>
+        </div>
+        <section class="research-backtest-panel" id="researchBacktestPanel" aria-live="polite" hidden>
+          <header>
+            <div><span class="card-kicker">BACKGROUND STRATEGY BACKTEST</span><h3 id="researchBacktestTitle">Strategy evidence</h3></div>
+            <div class="research-backtest-controls">
+              <label for="researchBacktestStrategy">MODEL</label>
+              <select id="researchBacktestStrategy">
+                <optgroup label="Trend following">
+                  <option value="sma">20/50 SMA crossover</option>
+                  <option value="donchian">55/20 Donchian breakout</option>
+                  <option value="ema">20/50 EMA crossover</option>
+                  <option value="momentum">63-session absolute momentum</option>
+                  <option value="triple">20/50/200 triple-SMA alignment</option>
+                </optgroup>
+                <optgroup label="Mean reversion">
+                  <option value="rsiReversion">RSI(2) oversold recovery</option>
+                  <option value="bollingerReversion">20-session Bollinger re-entry</option>
+                  <option value="zscoreReversion">10-session price z-score reversal</option>
+                  <option value="pullbackReversion">5/200 pullback in uptrend</option>
+                  <option value="selloffReversion">3-day selloff recovery</option>
+                </optgroup>
+              </select>
+              <span class="state-pill neutral" id="researchBacktestState">Not loaded</span>
+            </div>
+          </header>
+          <p class="research-backtest-method" id="researchBacktestMethod">Long-or-cash strategy using completed-session closes and a one-session signal shift.</p>
+          <div class="research-backtest-grid" id="researchBacktestGrid"><div class="empty-state">Open the calculation to inspect this stock’s historical evidence.</div></div>
+          <div class="research-backtest-foot">
+            <p id="researchBacktestCrossover">Latest crossover —</p>
+            <p id="researchBacktestLimitations">Gross historical calculation; no trade recommendation or order instruction.</p>
+          </div>
+        </section>
+      </div>
+      <footer class="stock-detail-dialog-foot">Research evidence only. This window does not issue a trade recommendation, target price, position size or order instruction.</footer>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js?v=cross-strategy-fdr-v37" defer></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*.log
+.DS_Store
+
+# Local credentials and environment overrides
+.env
+.env.*
+*.pem
+*.key
+
+# Workspace-owned market data and downloaded exchange archives
+data/*
+!data/.gitkeep
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.db
+
+# Temporary/downloaded archive material
+*.zip
+*.tmp
+
