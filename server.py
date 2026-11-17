@@ -19,6 +19,14 @@ from workspace_engine import (
     DEFAULT_MARKET_DB,
     KITE,
     bollinger_mean_reversion,
+    build_opportunity_feature_ledger,
+    build_market_regime_ledger,
+    build_sector_trend_ledger,
+    build_stock_leadership_ledger,
+    build_crossover_state_conditioning,
+    build_crossover_ablation_ladder,
+    build_top_down_oos_admission,
+    build_opportunity_board_release,
     corporate_action_contract,
     cross_strategy_multiple_testing,
     dashboard_overview,
@@ -28,9 +36,18 @@ from workspace_engine import (
     equity_delivery_cost_calculator,
     ensure_workspace_schema,
     factor_research,
+    forward_move_labels,
     moving_average_crossover,
+    market_regime_history,
     nifty50_ytd,
     point_in_time_universe_contract,
+    opportunity_feature_ledger,
+    sector_trend_history,
+    stock_leadership_history,
+    crossover_state_conditioning_history,
+    crossover_ablation_history,
+    top_down_oos_admission_history,
+    opportunity_board_release_status,
     refresh_global_risk,
     refresh_kite_breadth,
     refresh_kite_futures,
@@ -143,6 +160,143 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         if path == "/api/factor-research":
             self._local_contract(lambda: factor_research(self.market_db))
             return
+        if path == "/api/research/forward-move-labels":
+            query = parse_qs(parsed.query)
+            try:
+                payload = forward_move_labels(
+                    self.market_db,
+                    symbol=query.get("symbol", [""])[0] or None,
+                    sector_index=query.get("sector_index", [""])[0] or None,
+                    feature_from=query.get("from", [""])[0] or None,
+                    feature_through=query.get("through", [""])[0] or None,
+                )
+            except ValueError as error:
+                self._json(400, {"ok": False, "reason": str(error)})
+                return
+            self._json(200 if payload.get("ok") else 404, payload)
+            return
+        if path == "/api/research/feature-ledger/build":
+            query = parse_qs(parsed.query)
+            self._local_contract(lambda: build_opportunity_feature_ledger(
+                self.market_db,
+                self.snapshot_db,
+                query.get("as_of", [""])[0] or None,
+            ))
+            return
+        if path == "/api/research/feature-ledger":
+            query = parse_qs(parsed.query)
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+                payload = opportunity_feature_ledger(
+                    self.market_db,
+                    as_of_date=query.get("as_of", [""])[0] or None,
+                    symbol=query.get("symbol", [""])[0] or None,
+                    limit=limit,
+                )
+            except ValueError as error:
+                self._json(400, {"ok": False, "reason": str(error)})
+                return
+            self._json(200 if payload.get("ok") else 404, payload)
+            return
+        if path == "/api/research/market-regimes/build":
+            query = parse_qs(parsed.query)
+            self._local_contract(lambda: build_market_regime_ledger(
+                self.market_db, query.get("as_of", [""])[0] or None
+            ))
+            return
+        if path == "/api/research/market-regimes":
+            query = parse_qs(parsed.query)
+            try:
+                payload = market_regime_history(
+                    self.market_db,
+                    from_date=query.get("from", [""])[0] or None,
+                    through_date=query.get("through", [""])[0] or None,
+                    limit=int(query.get("limit", ["500"])[0]),
+                )
+            except ValueError as error:
+                self._json(400, {"ok": False, "reason": str(error)})
+                return
+            self._json(200 if payload.get("ok") else 404, payload)
+            return
+        if path == "/api/research/sector-trends/build":
+            query = parse_qs(parsed.query)
+            self._local_contract(lambda: build_sector_trend_ledger(
+                self.market_db, query.get("as_of", [""])[0] or None
+            ))
+            return
+        if path == "/api/research/sector-trends":
+            query = parse_qs(parsed.query)
+            try:
+                payload = sector_trend_history(
+                    self.market_db,
+                    from_date=query.get("from", [""])[0] or None,
+                    through_date=query.get("through", [""])[0] or None,
+                    sector=query.get("sector", [""])[0] or None,
+                    limit=int(query.get("limit", ["500"])[0]),
+                )
+            except ValueError as error:
+                self._json(400, {"ok": False, "reason": str(error)})
+                return
+            self._json(200 if payload.get("ok") else 404, payload)
+            return
+        if path == "/api/research/stock-leadership/build":
+            query = parse_qs(parsed.query)
+            self._local_contract(lambda: build_stock_leadership_ledger(
+                self.market_db, query.get("as_of", [""])[0] or None
+            ))
+            return
+        if path == "/api/research/stock-leadership":
+            query = parse_qs(parsed.query)
+            try:
+                payload = stock_leadership_history(
+                    self.market_db,
+                    as_of_date=query.get("as_of", [""])[0] or None,
+                    symbol=query.get("symbol", [""])[0] or None,
+                    sector=query.get("sector", [""])[0] or None,
+                    setup_state=query.get("setup_state", [""])[0] or None,
+                    limit=int(query.get("limit", ["500"])[0]),
+                )
+            except ValueError as error:
+                self._json(400, {"ok": False, "reason": str(error)})
+                return
+            self._json(200 if payload.get("ok") else 404, payload)
+            return
+        if path == "/api/research/crossover-conditioning/build":
+            self._local_contract(lambda: build_crossover_state_conditioning(self.market_db))
+            return
+        if path == "/api/research/crossover-conditioning":
+            query = parse_qs(parsed.query)
+            payload = crossover_state_conditioning_history(
+                self.market_db,
+                strategy=query.get("strategy", [""])[0] or None,
+                dimension=query.get("dimension", [""])[0] or None,
+            )
+            self._json(200 if payload.get("ok") else 404, payload)
+            return
+        if path == "/api/research/crossover-ablation/build":
+            self._local_contract(lambda: build_crossover_ablation_ladder(self.market_db))
+            return
+        if path == "/api/research/crossover-ablation":
+            query = parse_qs(parsed.query)
+            payload = crossover_ablation_history(
+                self.market_db, strategy=query.get("strategy", [""])[0] or None
+            )
+            self._json(200 if payload.get("ok") else 404, payload)
+            return
+        if path == "/api/research/top-down-oos-admission/build":
+            self._local_contract(lambda: build_top_down_oos_admission(self.market_db))
+            return
+        if path == "/api/research/top-down-oos-admission":
+            payload = top_down_oos_admission_history(self.market_db)
+            self._json(200 if payload.get("ok") else 404, payload)
+            return
+        if path == "/api/research/opportunity-board-release/build":
+            self._local_contract(lambda: build_opportunity_board_release(self.market_db))
+            return
+        if path == "/api/research/opportunity-board-release":
+            payload = opportunity_board_release_status(self.market_db)
+            self._json(200 if payload.get("ok") else 404, payload)
+            return
         if path == "/api/dashboard/seasonality-summary":
             self._local_contract(lambda: seasonality_summary(self.market_db))
             return
@@ -173,7 +327,11 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self._json(200, payload)
             return
         if path == "/api/backtests/cross-strategy-fdr":
-            self._local_contract(lambda: cross_strategy_multiple_testing(self.market_db))
+            query = parse_qs(parsed.query)
+            build_missing = query.get("build", ["false"])[0].lower() in {"1", "true", "yes"}
+            self._local_contract(lambda: cross_strategy_multiple_testing(
+                self.market_db, start_background=build_missing
+            ))
             return
         if path == "/api/backtests/moving-average-crossover":
             query = parse_qs(parsed.query)
@@ -447,12 +605,18 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
 
     def _json(self, status: int, body: dict[str, object]) -> None:
         payload = json.dumps(body).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except (BrokenPipeError, ConnectionResetError):
+            # The browser may abandon a bounded request while the local engine
+            # finishes its calculation. That is not a server failure and must
+            # not trigger a second response attempt from _local_contract.
+            return
 
     def log_message(self, format: str, *args: object) -> None:
         print(f"[Workspace 2.0] {format % args}")

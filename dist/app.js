@@ -35,8 +35,10 @@
   let latestStockYtdPayload = null;
   let latestBacktestPayload = null;
   let latestCrossStrategyFdrPayload = null;
+  let latestOpportunityReleasePayload = null;
+  let crossStrategyPollTimer = null;
   let researchRows = [];
-  let researchSort = { key: 'profitFactor', direction: 'desc' };
+  let researchSort = { key: 'evidenceScore', direction: 'desc' };
   let selectedResearchSymbol = null;
   let researchBacktestPanelSymbol = null;
   const researchBacktestCache = new Map();
@@ -67,6 +69,25 @@
     showToast.timer = window.setTimeout(() => toast.classList.remove('visible'), 3200);
   }
 
+  function renderOpportunityRelease(payload) {
+    latestOpportunityReleasePayload = payload;
+    const authorised = payload?.board_authorised === true;
+    const available = Boolean(payload && typeof payload === 'object');
+    const card = $('opportunityReleaseCard');
+    const badge = $('opportunityReleaseBadge');
+    if (!card || !badge) return;
+    card.classList.toggle('authorised', authorised);
+    card.classList.toggle('withheld', !authorised);
+    badge.className = `opportunity-release-badge ${authorised ? 'authorised' : 'withheld'}`;
+    badge.textContent = authorised ? 'VALIDATED' : (available ? 'WITHHELD' : 'UNAVAILABLE');
+    text('opportunityReleaseHeadline', payload?.headline || 'Opportunity release decision unavailable');
+    text('opportunityReleaseExplanation', payload?.explanation || 'No opportunity rankings or trade controls are being published.');
+    const admitted = Number(payload?.admitted_strategies || 0);
+    const rejected = Number(payload?.rejected_strategies || 0);
+    const counts = available ? `${admitted} admitted · ${rejected} rejected` : 'Release ledger unavailable';
+    text('opportunityReleaseNextAction', `${counts}${payload?.next_action ? ` · ${payload.next_action}` : ''}`);
+  }
+
   function setSourceState(state, label) {
     const node = $('sourceState');
     node.className = `source-state ${state}`;
@@ -88,9 +109,24 @@
     $('kiteLoginButton').setAttribute('aria-expanded', String(open));
   }
 
+  async function fetchWithDeadline(url, options = {}, timeoutMs = 20000) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw new Error(`Timed out after ${Math.round(timeoutMs / 1000)} seconds`);
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
   async function loadKiteStatus() {
     try {
-      const response = await fetch('/api/kite/status', { cache: 'no-store' });
+      const response = await fetchWithDeadline('/api/kite/status', { cache: 'no-store' });
       const payload = await response.json();
       setKiteState(response.ok && payload.connected === true);
     } catch (_error) {
@@ -108,7 +144,7 @@
     ];
     for (const endpoint of endpoints) {
       try {
-        const response = await fetch(endpoint, { cache: 'no-store' });
+        const response = await fetchWithDeadline(endpoint, { cache: 'no-store' }, 60000);
         const payload = await response.json();
         if (!response.ok || payload.ok === false) throw new Error(payload.reason || `HTTP ${response.status}`);
       } finally {
@@ -119,7 +155,7 @@
 
   async function sourceCorporateActions(onComplete = () => {}) {
     try {
-      const response = await fetch('/api/workspace/corporate-actions/refresh', { cache: 'no-store' });
+      const response = await fetchWithDeadline('/api/workspace/corporate-actions/refresh', { cache: 'no-store' }, 60000);
       const payload = await response.json();
       if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.reason || `HTTP ${response.status}`);
       return payload;
@@ -130,9 +166,9 @@
 
   async function sourceOfficialSnapshots(onComplete = () => {}) {
     try {
-      const response = await fetch('/api/workspace/snapshots/refresh', {
+      const response = await fetchWithDeadline('/api/workspace/snapshots/refresh', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', body: '{}',
-      });
+      }, 60000);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || payload.reason || `HTTP ${response.status}`);
       if (payload.status === 'partial') {
@@ -147,9 +183,9 @@
 
   async function sourceGlobalRisk(onComplete = () => {}) {
     try {
-      const response = await fetch('/api/workspace/global-risk/refresh', {
+      const response = await fetchWithDeadline('/api/workspace/global-risk/refresh', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', body: '{}',
-      });
+      }, 60000);
       const payload = await response.json();
       if (!response.ok || payload.ok !== true) {
         throw new Error(payload.global_risk?.reason || payload.detail || payload.reason || `HTTP ${response.status}`);
@@ -271,6 +307,11 @@
         const screen = screenMap.get(factor.symbol) || {};
         const backtest = backtestMap.get(factor.symbol) || {};
         const crossStrategy = latestCrossStrategyFdrPayload?.by_engine?.[latestBacktestPayload?.engine]?.[factor.symbol] || {};
+        const evidenceRanking = backtest.evidence_ranking || {};
+        const globalQValue = crossStrategy.cross_strategy_q_value;
+        const globalFdrPassed = safeNumber(globalQValue) !== null && Number(globalQValue) <= 0.05;
+        const rankingFailedChecks = [...new Set([...(evidenceRanking.failed_checks || []), ...(globalFdrPassed ? [] : ['all_strategy_fdr'])])];
+        const rankingAdmitted = evidenceRanking.ranking_admissible === true && globalFdrPassed;
         return {
           symbol: factor.symbol,
           name: factor.symbol,
@@ -297,15 +338,25 @@
           backtestSignal: backtest.current_signal,
           profitFactor: backtest.net_profit_factor,
           tradeEdge: backtest.net_trade_expectancy_pct,
-          pValue: backtest.net_trade_edge_p_value,
-          qValue: backtest.net_trade_edge_q_value,
-          globalQValue: crossStrategy.cross_strategy_q_value,
+          pValue: evidenceRanking.oos_net_trade_edge_p_value ?? backtest.net_trade_edge_p_value,
+          qValue: evidenceRanking.oos_net_trade_edge_q_value ?? backtest.net_trade_edge_q_value,
+          globalQValue,
+          rankingAdmitted,
+          evidenceScore: rankingAdmitted ? evidenceRanking.score : null,
+          diagnosticScore: evidenceRanking.diagnostic_score,
+          rankingFailedChecks,
+          oosMetrics: evidenceRanking.oos_metrics || {},
         };
       });
     } else {
       researchRows = (latestStockYtdPayload?.rows || []).map((row) => {
         const backtest = backtestMap.get(row.symbol) || {};
         const crossStrategy = latestCrossStrategyFdrPayload?.by_engine?.[latestBacktestPayload?.engine]?.[row.symbol] || {};
+        const evidenceRanking = backtest.evidence_ranking || {};
+        const globalQValue = crossStrategy.cross_strategy_q_value;
+        const globalFdrPassed = safeNumber(globalQValue) !== null && Number(globalQValue) <= 0.05;
+        const rankingFailedChecks = [...new Set([...(evidenceRanking.failed_checks || []), ...(globalFdrPassed ? [] : ['all_strategy_fdr'])])];
+        const rankingAdmitted = evidenceRanking.ranking_admissible === true && globalFdrPassed;
         return {
           symbol: row.symbol,
           name: row.name || row.symbol,
@@ -332,9 +383,14 @@
           backtestSignal: backtest.current_signal,
           profitFactor: backtest.net_profit_factor,
           tradeEdge: backtest.net_trade_expectancy_pct,
-          pValue: backtest.net_trade_edge_p_value,
-          qValue: backtest.net_trade_edge_q_value,
-          globalQValue: crossStrategy.cross_strategy_q_value,
+          pValue: evidenceRanking.oos_net_trade_edge_p_value ?? backtest.net_trade_edge_p_value,
+          qValue: evidenceRanking.oos_net_trade_edge_q_value ?? backtest.net_trade_edge_q_value,
+          globalQValue,
+          rankingAdmitted,
+          evidenceScore: rankingAdmitted ? evidenceRanking.score : null,
+          diagnosticScore: evidenceRanking.diagnostic_score,
+          rankingFailedChecks,
+          oosMetrics: evidenceRanking.oos_metrics || {},
         };
       });
     }
@@ -363,16 +419,17 @@
       const commonDate = payload.data_quality_contract?.common_as_of_date;
       const tested = Number(payload.multiple_testing?.tested_hypotheses || 0);
       const discoveries = Number(payload.multiple_testing?.fdr_q_below_alpha || 0);
+      const oosRanked = Number(payload.evidence_ranking?.ranking_admitted || 0);
       const globalDiscoveries = Number(latestCrossStrategyFdrPayload?.fdr_q_below_alpha || 0);
       const globalTested = Number(latestCrossStrategyFdrPayload?.tested_hypotheses || 0);
-      text('researchRankStatus', `${model.label} · ${ready.toLocaleString('en-IN')} comparable · ${discoveries} of ${tested} pass strategy FDR${globalTested ? ` · ${globalDiscoveries} of ${globalTested} pass all-strategy FDR` : ' · all-strategy FDR calculating'}${commonDate ? ` through ${displayDate(commonDate)}` : ''}`);
-      text('researchBacktestColumnLabel', `${model.shortLabel} PF / strategy q / all q`);
-      researchSort = { key: 'profitFactor', direction: $('researchProfitOrder').value };
+      text('researchRankStatus', `${model.label} · ${oosRanked} pass full-history OOS gates · ${ready.toLocaleString('en-IN')} comparable · ${discoveries} of ${tested} pass comparison-window FDR${globalTested ? ` · ${globalDiscoveries} of ${globalTested} pass all-strategy OOS FDR` : ' · all-strategy OOS FDR calculating'}${commonDate ? ` through ${displayDate(commonDate)}` : ''}`);
+      text('researchBacktestColumnLabel', `${model.shortLabel} evidence score / gate`);
+      researchSort = { key: 'evidenceScore', direction: $('researchProfitOrder').value };
       buildResearchRows();
     } catch (error) {
       latestBacktestPayload = null;
       text('researchRankStatus', `${model.label} unavailable`);
-      text('researchBacktestColumnLabel', `${model.shortLabel} PF / strategy q / all q`);
+      text('researchBacktestColumnLabel', `${model.shortLabel} evidence score / gate`);
       buildResearchRows();
       showToast(`Unable to load ${model.label}: ${error.message}`);
     } finally {
@@ -382,7 +439,7 @@
 
   async function loadCrossStrategyFdr() {
     try {
-      const response = await fetch('/api/backtests/cross-strategy-fdr', { cache: 'no-store' });
+      const response = await fetchWithDeadline('/api/backtests/cross-strategy-fdr', { cache: 'no-store' });
       const payload = await response.json();
       if (!response.ok || payload.ok !== true) throw new Error(payload.reason || `HTTP ${response.status}`);
       latestCrossStrategyFdrPayload = payload;
@@ -390,7 +447,20 @@
       const model = researchBacktestModels[researchRankingModel] || researchBacktestModels.sma;
       const strategyTests = Number(latestBacktestPayload?.multiple_testing?.tested_hypotheses || 0);
       const strategyDiscoveries = Number(latestBacktestPayload?.multiple_testing?.fdr_q_below_alpha || 0);
-      text('researchRankStatus', `${model.label} · ${strategyDiscoveries} of ${strategyTests} pass strategy FDR · ${Number(payload.fdr_q_below_alpha || 0)} of ${Number(payload.tested_hypotheses || 0)} pass all-strategy FDR · ${Number(payload.strategy_count || 0)} models through ${displayDate(payload.as_of_date)}`);
+      if (payload.coverage_complete) {
+        text('researchRankStatus', `${model.label} · ${Number(latestBacktestPayload?.evidence_ranking?.ranking_admitted || 0)} pass full-history OOS gates · ${strategyDiscoveries} of ${strategyTests} pass comparison-window FDR · ${Number(payload.fdr_q_below_alpha || 0)} of ${Number(payload.tested_hypotheses || 0)} pass all-strategy OOS FDR · ${Number(payload.strategy_count || 0)} models through ${displayDate(payload.as_of_date)}`);
+        if (crossStrategyPollTimer) clearTimeout(crossStrategyPollTimer);
+        crossStrategyPollTimer = null;
+      } else if (payload.status === 'building_oos_strategy_family') {
+        const current = payload.background_progress?.current_engine;
+        text('researchRankStatus', `${model.label} · ${Number(latestBacktestPayload?.evidence_ranking?.ranking_admitted || 0)} pass full-history OOS gates · building all-strategy OOS family ${Number(payload.strategy_count || 0)} / ${Number(payload.required_strategy_count || 10)}${current ? ` · ${current.replaceAll('_', ' ')}` : ''}`);
+        if (crossStrategyPollTimer) clearTimeout(crossStrategyPollTimer);
+        crossStrategyPollTimer = setTimeout(() => { void loadCrossStrategyFdr(); }, 5000);
+      } else {
+        text('researchRankStatus', `${model.label} · ${Number(latestBacktestPayload?.evidence_ranking?.ranking_admitted || 0)} pass full-history OOS gates · all-strategy OOS family cached ${Number(payload.strategy_count || 0)} / ${Number(payload.required_strategy_count || 10)}; final FDR withheld until each model is opened`);
+        if (crossStrategyPollTimer) clearTimeout(crossStrategyPollTimer);
+        crossStrategyPollTimer = null;
+      }
     } catch (error) {
       text('researchRankStatus', `${researchBacktestModels[researchRankingModel]?.label || 'Backtest'} · all-strategy FDR unavailable; within-strategy correction remains active`);
     }
@@ -467,7 +537,7 @@
     text('researchTableTitle', universe === 'fno' ? 'F&O research universe' : 'NIFTY 500 research table');
     text('researchReturnLabel', universe === 'fno' ? '20-session return' : 'YTD return');
     text('researchSecondaryLabel', universe === 'fno' ? 'Excess vs Nifty 50' : 'Vs 20DMA');
-    text('researchBacktestColumnLabel', `${rankingModel.shortLabel} PF / strategy q / all q`);
+    text('researchBacktestColumnLabel', `${rankingModel.shortLabel} evidence score / gate`);
     const rows = researchFilteredRows();
     text('researchResultCount', `${rows.length.toLocaleString('en-IN')} results`);
     const visibleRows = Math.min(12, Math.max(1, rows.length));
@@ -477,10 +547,10 @@
       const evidenceClass = row.status === 'eligible' ? 'eligible' : (row.status === 'ready' ? 'ready' : 'partial');
       const evidenceLabel = row.status === 'eligible' ? 'Eligible' : (row.status === 'ready' ? 'Ready' : row.status === 'gated' ? 'Gate pending' : 'Partial');
       const backtestTone = row.backtestReady
-        ? (safeNumber(row.tradeEdge) >= 0 ? 'positive' : 'negative')
+        ? (row.rankingAdmitted ? 'positive' : 'negative')
         : 'unavailable';
       const backtestPrimary = row.backtestReady
-        ? `PF ${safeNumber(row.profitFactor) === null ? '—' : `${Number(row.profitFactor).toFixed(2)}×`}`
+        ? (row.rankingAdmitted && safeNumber(row.evidenceScore) !== null ? `Score ${Number(row.evidenceScore).toFixed(1)}` : 'Not ranked')
         : row.backtestStatus === 'data_quality_gated' ? 'Quality gated' : 'Unavailable';
       const gateLabels = {
         stale_latest_observation: 'stale close',
@@ -494,9 +564,27 @@
         corporate_action_ledger_incomplete: 'corporate-action coverage incomplete',
         corporate_action_manual_review: 'corporate action needs review',
       };
+      const rankingGateLabels = {
+        minimum_admitted_test_folds: 'admitted OOS folds',
+        minimum_completed_trades: 'trade sample',
+        positive_fold_ratio: 'positive-fold ratio',
+        net_profit_factor: 'net PF',
+        positive_net_trade_edge: 'net edge',
+        within_strategy_fdr: 'strategy FDR',
+        oos_within_strategy_fdr: 'OOS strategy FDR',
+        all_strategy_fdr: 'all-strategy FDR',
+        drawdown_limit: 'drawdown',
+        positive_excess_return: 'excess return',
+        out_of_sample_stability: 'OOS stability',
+        data_quality: 'data quality',
+        full_history_walk_forward_unavailable: 'full-history OOS unavailable',
+        full_history_data_quality: 'full-history data quality',
+        missing_reference_sessions: 'full-history gaps',
+      };
       const qualityReasons = (row.backtestQuality?.blocking_gates || []).map((gate) => gateLabels[gate] || gate.replaceAll('_', ' '));
+      const rankingReasons = (row.rankingFailedChecks || []).map((gate) => rankingGateLabels[gate] || gate.replaceAll('_', ' '));
       const backtestSecondary = row.backtestReady
-        ? `${researchQValue(row.qValue)} · all ${researchQValue(row.globalQValue)} · raw ${researchPValue(row.pValue)} · Edge ${researchPercent(row.tradeEdge)} · ${row.backtestSignal === 'invested' ? 'Invested' : 'Cash'}`
+        ? `${rankingReasons.length ? `Gates: ${rankingReasons.join(', ')} · ` : ''}Diagnostic ${safeNumber(row.diagnosticScore) === null ? '—' : Number(row.diagnosticScore).toFixed(1)} · PF ${safeNumber(row.profitFactor) === null ? '—' : `${Number(row.profitFactor).toFixed(2)}×`} · ${researchQValue(row.qValue)} · all ${researchQValue(row.globalQValue)}`
         : qualityReasons.length ? qualityReasons.join(' · ') : 'Insufficient stored history';
       return `<tr>
         <td><button class="research-symbol" type="button" data-research-symbol="${escapeHtml(row.symbol)}">${escapeHtml(row.symbol)}</button><small class="research-company">${escapeHtml(row.name)}</small></td>
@@ -513,7 +601,7 @@
     const coverage = universe === 'fno' ? latestFactorPayload?.coverage : latestStockYtdPayload?.coverage;
     text('researchCoverageNote', universe === 'fno'
       ? `${Number(coverage?.research_eligible || 0)} research eligible · ${Number(coverage?.price_history_ready || 0)} price-history ready · no ranked recommendation is published.`
-      : `${Number(coverage?.ready || 0)} ready · ${Number(coverage?.partial_history || 0)} partial history · current ordering is exploratory · point-in-time membership is complete for the reviewed window · OOS admission is evaluated per stock.`);
+      : `${Number(coverage?.ready || 0)} ready · ${Number(coverage?.partial_history || 0)} partial history · failed evidence is not ranked · diagnostic scores remain visible · full-history OOS substitution is the next increment.`);
     body.querySelectorAll('[data-research-symbol]').forEach((button) => button.addEventListener('click', () => renderResearchDetail(button.dataset.researchSymbol)));
     if ($('researchDetailDialog').open && selectedResearchSymbol && researchRows.some((row) => row.symbol === selectedResearchSymbol)) renderResearchDetail(selectedResearchSymbol);
   }
@@ -675,6 +763,24 @@
       : 'Unavailable';
     const bootstrapReady = statisticalEvidence.status === 'ready';
     const rankingEvidence = researchRows.find((row) => row.symbol === symbol) || {};
+    const rankingGateLabels = {
+      minimum_admitted_test_folds: 'admitted OOS folds',
+      minimum_completed_trades: 'trade sample',
+      positive_fold_ratio: 'positive-fold ratio',
+      net_profit_factor: 'net PF',
+      positive_net_trade_edge: 'net edge',
+      within_strategy_fdr: 'strategy FDR',
+      oos_within_strategy_fdr: 'OOS strategy FDR',
+      all_strategy_fdr: 'all-strategy FDR',
+      drawdown_limit: 'drawdown',
+      positive_excess_return: 'excess return',
+      out_of_sample_stability: 'OOS stability',
+      data_quality: 'data quality',
+      full_history_walk_forward_unavailable: 'full-history OOS unavailable',
+      full_history_data_quality: 'full-history data quality',
+      missing_reference_sessions: 'full-history gaps',
+    };
+    const rankingFailures = (rankingEvidence.rankingFailedChecks || []).map((name) => rankingGateLabels[name] || name.replaceAll('_', ' '));
     const holdoutPeriods = result.chronological_validation?.periods || [];
     const trainingPeriod = holdoutPeriods.find((period) => period.period === 'training') || {};
     const untouchedPeriod = holdoutPeriods.find((period) => period.period === 'untouched_test') || {};
@@ -694,8 +800,10 @@
       ['Net profit factor', safeNumber(result.net_profit_factor) === null ? '—' : `${Number(result.net_profit_factor).toFixed(2)}×`, `Gross PF ${safeNumber(result.profit_factor) === null ? '—' : `${Number(result.profit_factor).toFixed(2)}×`} · estimated charges ₹${researchNumber(result.estimated_total_cost_inr)}`, safeNumber(result.net_profit_factor) >= 1 ? 'positive' : 'negative'],
       ['Net trade edge', safeNumber(result.net_trade_expectancy_pct) === null ? '—' : researchPercent(result.net_trade_expectancy_pct), `Gross edge ${researchPercent(result.trade_expectancy_pct)} · ${Number(result.completed_trades || 0)} completed trades`, safeNumber(result.net_trade_expectancy_pct) >= 0 ? 'positive' : 'negative'],
       ['Net statistical significance', researchPValue(result.net_trade_edge_p_value), `${Number(result.completed_trades || 0)} cost-adjusted trades · exploratory two-sided t-test`, safeNumber(result.net_trade_edge_p_value) !== null && result.net_trade_edge_p_value <= 0.05 ? (safeNumber(result.net_trade_expectancy_pct) >= 0 ? 'positive' : 'negative') : ''],
-      ['Universe-adjusted significance', researchQValue(rankingEvidence.qValue), `${researchPValue(rankingEvidence.pValue)} in the 252-session ${researchBacktestModels[researchRankingModel]?.shortLabel || 'strategy'} stock family`, safeNumber(rankingEvidence.qValue) !== null && rankingEvidence.qValue <= 0.05 ? (safeNumber(rankingEvidence.tradeEdge) >= 0 ? 'positive' : 'negative') : 'neutral'],
-      ['All-strategy adjusted significance', researchQValue(rankingEvidence.globalQValue), latestCrossStrategyFdrPayload ? `${Number(latestCrossStrategyFdrPayload.tested_hypotheses || 0).toLocaleString('en-IN')} stock × strategy hypotheses across ${Number(latestCrossStrategyFdrPayload.strategy_count || 0)} models` : 'Combined correction is still calculating', safeNumber(rankingEvidence.globalQValue) !== null && rankingEvidence.globalQValue <= 0.05 ? (safeNumber(rankingEvidence.tradeEdge) >= 0 ? 'positive' : 'negative') : 'neutral'],
+      ['OOS universe-adjusted significance', researchQValue(rankingEvidence.qValue), `${researchPValue(rankingEvidence.pValue)} across full-history, point-in-time-admitted ${researchBacktestModels[researchRankingModel]?.shortLabel || 'strategy'} test folds`, safeNumber(rankingEvidence.qValue) !== null && rankingEvidence.qValue <= 0.05 ? (safeNumber(rankingEvidence.tradeEdge) >= 0 ? 'positive' : 'negative') : 'neutral'],
+      ['All-strategy OOS significance', researchQValue(rankingEvidence.globalQValue), latestCrossStrategyFdrPayload ? `${Number(latestCrossStrategyFdrPayload.tested_hypotheses || 0).toLocaleString('en-IN')} full-history OOS stock × strategy hypotheses across ${Number(latestCrossStrategyFdrPayload.strategy_count || 0)} models` : 'Combined OOS correction is still calculating', safeNumber(rankingEvidence.globalQValue) !== null && rankingEvidence.globalQValue <= 0.05 ? (safeNumber(rankingEvidence.tradeEdge) >= 0 ? 'positive' : 'negative') : 'neutral'],
+      ['Evidence ranking gate', rankingEvidence.rankingAdmitted ? 'Admitted' : 'Not ranked', rankingFailures.length ? `Failed: ${rankingFailures.join(' · ')}` : 'Every ranking gate passes', rankingEvidence.rankingAdmitted ? 'positive' : 'negative'],
+      ['Composite diagnostic score', safeNumber(rankingEvidence.diagnosticScore) === null ? '—' : `${Number(rankingEvidence.diagnosticScore).toFixed(1)} / 100`, 'Diagnostic only until every evidence gate passes; it is not a recommendation.', 'neutral'],
       ['Frozen training significance', researchPValue(trainingPeriod.net_trade_edge_p_value), `${Number(trainingPeriod.completed_trades || 0)} completed net trades · in-sample 60% holdout segment`, 'neutral'],
       ['Untouched-test significance', researchPValue(untouchedPeriod.net_trade_edge_p_value), `${Number(untouchedPeriod.completed_trades || 0)} completed net trades · frozen final 20% holdout`, safeNumber(untouchedPeriod.net_trade_edge_p_value) !== null && untouchedPeriod.net_trade_edge_p_value <= 0.05 ? (safeNumber(untouchedPeriod.net_trade_expectancy_pct) >= 0 ? 'positive' : 'negative') : 'neutral'],
       ['Admitted-fold OOS significance', researchPValue(oosEvidence.net_trade_edge_p_value), `${Number(oosEvidence.completed_net_trades || 0)} net trades across ${Number(oosEvidence.admitted_test_folds || 0)} point-in-time-admitted test folds`, safeNumber(oosEvidence.net_trade_edge_p_value) !== null && oosEvidence.net_trade_edge_p_value <= 0.05 ? 'positive' : 'neutral'],
@@ -703,7 +811,7 @@
       ['Block-bootstrap edge interval', bootstrapReady ? formatInterval(blockBootstrap.net_expectancy_ci_95_pct, '%') : 'Insufficient sample', bootstrapReady ? `95% interval · ${Number(blockBootstrap.block_length_trades || 0)}-trade circular blocks` : 'Serial-dependence check activates at the minimum sample', bootstrapReady && safeNumber(blockBootstrap.net_expectancy_ci_95_pct?.[0]) > 0 ? 'positive' : bootstrapReady && safeNumber(blockBootstrap.net_expectancy_ci_95_pct?.[1]) < 0 ? 'negative' : 'neutral'],
       ['Net PF uncertainty', bootstrapReady ? formatInterval(blockBootstrap.net_profit_factor_ci_95, '×') : 'Insufficient sample', bootstrapReady ? `${Number(blockBootstrap.valid_profit_factor_resamples || 0).toLocaleString('en-IN')} valid block-bootstrap resamples` : 'Profit-factor interval activates with adequate completed trades', bootstrapReady && safeNumber(blockBootstrap.net_profit_factor_ci_95?.[0]) > 1 ? 'positive' : bootstrapReady && safeNumber(blockBootstrap.net_profit_factor_ci_95?.[1]) < 1 ? 'negative' : 'neutral'],
       ['Walk-forward coverage', totalFolds ? `${admittedFolds} / ${totalFolds} folds admitted` : 'Unavailable', `Point-in-time reviewed window starts ${displayDate(walkForward.point_in_time_coverage?.reviewed_from)}`, admittedFolds >= 3 ? 'positive' : 'neutral'],
-      ['OOS stability gate', admission.ranking_admissible ? 'Admitted' : 'Gated', failedChecks.length ? `Pending: ${failedChecks.map((name) => failedLabels[name] || name.replaceAll('_', ' ')).join(' · ')}` : 'Every out-of-sample stability check passes', admission.ranking_admissible ? 'positive' : 'negative'],
+      ['OOS stability gate', totalFolds ? (admission.ranking_admissible ? 'Admitted' : 'Gated') : 'Unavailable', totalFolds ? (failedChecks.length ? `Pending: ${failedChecks.map((name) => failedLabels[name] || name.replaceAll('_', ' ')).join(' · ')}` : 'Every out-of-sample stability check passes') : 'Stored history does not yet support the fixed walk-forward fold design', admission.ranking_admissible ? 'positive' : 'negative'],
       ['OOS median net PF', safeNumber(admissionMetrics.median_net_profit_factor) === null ? '—' : `${Number(admissionMetrics.median_net_profit_factor).toFixed(2)}×`, `${Number(admissionMetrics.completed_trades || 0)} completed trades across admitted test folds`, safeNumber(admissionMetrics.median_net_profit_factor) >= 1.1 ? 'positive' : 'negative'],
       ['OOS positive folds', safeNumber(admissionMetrics.positive_fold_ratio) === null ? '—' : researchPercent(Number(admissionMetrics.positive_fold_ratio) * 100), `Median net edge ${researchPercent(admissionMetrics.median_net_trade_expectancy_pct)} · worst drawdown ${researchPercent(admissionMetrics.worst_net_drawdown_pct)}`, safeNumber(admissionMetrics.positive_fold_ratio) >= 0.6 ? 'positive' : 'negative'],
       ['Point-in-time universe', payload.data_quality_contract?.point_in_time_universe_status === 'complete_for_reviewed_window' ? 'Reviewed window complete' : 'Partial', payload.data_quality_contract?.walk_forward_fold_universe_gate_enforced ? 'Applied independently to every walk-forward test fold; current-window ranking remains exploratory' : 'Historical membership gate not yet applied', 'neutral'],
@@ -1318,7 +1426,7 @@
 
   async function loadNiftyYtd(onComplete = () => {}) {
     try {
-      const response = await fetch('/api/workspace/nifty50-ytd', { cache: 'no-store' });
+      const response = await fetchWithDeadline('/api/workspace/nifty50-ytd', { cache: 'no-store' });
       const payload = await response.json();
       if (!response.ok || payload.ok !== true) throw new Error(payload.reason || `HTTP ${response.status}`);
       latestNiftyYtdPayload = payload;
@@ -1334,22 +1442,29 @@
   async function loadSupplement(onComplete = () => {}) {
     const fetchOptional = async (url) => {
       try {
-        const response = await fetch(url, { cache: 'no-store' });
+        const response = await fetchWithDeadline(url, { cache: 'no-store' });
         return response.ok ? await response.json() : null;
       } finally {
         onComplete();
       }
     };
     try {
-      const [domestic, factorResearch, snapshots, seasonality, screener, stockYtd, backtests] = await Promise.all([
-        fetchOptional('/api/market-sentiment/domestic-core'),
-        fetchOptional('/api/factor-research'),
-        fetchOptional('/api/workspace/snapshots'),
-        fetchOptional('/api/dashboard/seasonality-summary'),
-        fetchOptional('/api/screener/local'),
-        fetchOptional('/api/stocks/ytd'),
-        fetchOptional('/api/backtests/moving-average-crossover'),
-      ]);
+      // These contracts are CPU-heavy Python/SQLite reads. Running all eight
+      // simultaneously makes them contend for the interpreter and turns a
+      // roughly 14-second sequential load into a minute-long apparent hang.
+      const supplementUrls = [
+        '/api/market-sentiment/domestic-core',
+        '/api/factor-research',
+        '/api/workspace/snapshots',
+        '/api/dashboard/seasonality-summary',
+        '/api/screener/local',
+        '/api/stocks/ytd',
+        '/api/backtests/moving-average-crossover',
+        '/api/research/opportunity-board-release',
+      ];
+      const supplementValues = [];
+      for (const url of supplementUrls) supplementValues.push(await fetchOptional(url));
+      const [domestic, factorResearch, snapshots, seasonality, screener, stockYtd, backtests, opportunityRelease] = supplementValues;
       latestDomesticPayload = domestic;
       latestSnapshotPayload = snapshots;
       latestSeasonalityPayload = seasonality;
@@ -1357,6 +1472,7 @@
       latestScreenerPayload = screener;
       latestStockYtdPayload = stockYtd;
       latestBacktestPayload = backtests;
+      renderOpportunityRelease(opportunityRelease);
       if (backtests?.ok === true) {
         researchRankingPayloads.set('sma', backtests);
         const ready = Number(backtests.coverage?.ready || 0);
@@ -1364,7 +1480,8 @@
         const commonDate = backtests.data_quality_contract?.common_as_of_date;
         const tested = Number(backtests.multiple_testing?.tested_hypotheses || 0);
         const discoveries = Number(backtests.multiple_testing?.fdr_q_below_alpha || 0);
-        text('researchRankStatus', `${researchBacktestModels.sma.label} · ${ready.toLocaleString('en-IN')} comparable · ${gated.toLocaleString('en-IN')} quality-gated · ${discoveries} of ${tested} pass 5% FDR${commonDate ? ` through ${displayDate(commonDate)}` : ''} · OOS admission shown per stock`);
+        const oosRanked = Number(backtests.evidence_ranking?.ranking_admitted || 0);
+        text('researchRankStatus', `${researchBacktestModels.sma.label} · ${oosRanked} pass full-history OOS gates · ${ready.toLocaleString('en-IN')} comparable · ${gated.toLocaleString('en-IN')} quality-gated · ${discoveries} of ${tested} pass comparison-window FDR${commonDate ? ` through ${displayDate(commonDate)}` : ''}`);
         void loadCrossStrategyFdr();
       }
       if (!stockYtd?.rows?.length && factorResearch?.rows?.length && $('researchUniverse').value === 'nifty500') {
@@ -1379,6 +1496,7 @@
       buildResearchRows();
     } catch (_error) {
       renderSupplement(null, null);
+      renderOpportunityRelease(null);
     }
   }
 
@@ -1424,13 +1542,11 @@
         showToast(`NSE corporate-action refresh was incomplete: ${error.message}`);
       }
     }
-    const supplementPromise = loadSupplement(markComplete);
-    const ytdPromise = loadNiftyYtd(markComplete);
     try {
       let response;
       let payload;
       try {
-        response = await fetch('/api/dashboard/overview', { cache: 'no-store' });
+        response = await fetchWithDeadline('/api/dashboard/overview', { cache: 'no-store' });
         payload = await response.json();
       } finally {
         markComplete();
@@ -1450,7 +1566,10 @@
       $('storyConfidence').className = 'state-pill risk';
       if (showMessage) showToast(`Refresh failed: ${error.message}`);
     } finally {
-      await Promise.allSettled([supplementPromise, ytdPromise]);
+      // Keep the server-facing work sequential. The local engine is fast per
+      // contract but concurrent full-universe calculations compete for the GIL.
+      await loadNiftyYtd(markComplete);
+      await loadSupplement(markComplete);
       if (!$('stockResearchView').hidden && (latestStockYtdPayload?.rows?.length || latestFactorPayload?.rows?.length)) {
         setSourceState('ready', 'Workspace data ready');
       }
@@ -1584,7 +1703,7 @@
     renderFnoTable();
   }));
   $('researchUniverse').addEventListener('change', () => {
-    researchSort = { key: 'profitFactor', direction: $('researchProfitOrder').value };
+    researchSort = { key: 'evidenceScore', direction: $('researchProfitOrder').value };
     closeResearchDetail();
     buildResearchRows();
   });
@@ -1593,7 +1712,7 @@
   $('researchState').addEventListener('change', renderResearchTable);
   $('researchRankModel').addEventListener('change', () => loadResearchRanking($('researchRankModel').value));
   $('researchProfitOrder').addEventListener('change', () => {
-    researchSort = { key: 'profitFactor', direction: $('researchProfitOrder').value };
+    researchSort = { key: 'evidenceScore', direction: $('researchProfitOrder').value };
     renderResearchTable();
   });
   $('researchReset').addEventListener('click', () => {
@@ -1622,7 +1741,7 @@
     researchSort = researchSort.key === key
       ? { key, direction: researchSort.direction === 'asc' ? 'desc' : 'asc' }
       : { key, direction: ['symbol', 'sector', 'status'].includes(key) ? 'asc' : 'desc' };
-    if (key === 'profitFactor') $('researchProfitOrder').value = researchSort.direction;
+    if (key === 'evidenceScore') $('researchProfitOrder').value = researchSort.direction;
     renderResearchTable();
   }));
   setTheme(localStorage.getItem('workspace-2-theme') || 'dark');

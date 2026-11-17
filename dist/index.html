@@ -372,6 +372,16 @@
           <article><span>RESEARCH ELIGIBLE</span><strong id="researchEligibleCount">—</strong><small id="researchEligibleMeta">Liquidity and history gates</small></article>
         </section>
 
+        <section class="card opportunity-release-card withheld" id="opportunityReleaseCard" aria-live="polite">
+          <div>
+            <span class="card-kicker">TOP-DOWN OPPORTUNITY RESEARCH</span>
+            <h2 id="opportunityReleaseHeadline">Checking release decision</h2>
+            <p id="opportunityReleaseExplanation">Reading the frozen ablation and out-of-sample admission evidence.</p>
+            <small id="opportunityReleaseNextAction">Opportunity rankings remain unavailable until validation passes.</small>
+          </div>
+          <span class="opportunity-release-badge withheld" id="opportunityReleaseBadge">REVIEWING</span>
+        </section>
+
         <section class="research-grid">
           <article class="card span-12 research-controls-card">
             <div class="research-controls">
@@ -418,10 +428,10 @@
                   </optgroup>
                 </select>
               </label>
-              <label>Profit factor order
+              <label>Evidence ranking
                 <select id="researchProfitOrder">
-                  <option value="desc">Highest first</option>
-                  <option value="asc">Lowest first</option>
+                  <option value="desc">Highest admitted score</option>
+                  <option value="asc">Lowest admitted score</option>
                 </select>
               </label>
               <span class="research-rank-status" id="researchRankStatus" role="status">20/50-session SMA evidence ready</span>
@@ -445,7 +455,7 @@
                   <th><button type="button" data-research-sort="vs50">Vs 50DMA <span></span></button></th>
                   <th><button type="button" data-research-sort="vs200">Vs 200DMA <span></span></button></th>
                   <th><button type="button" data-research-sort="status">Evidence <span></span></button></th>
-                  <th><button type="button" data-research-sort="profitFactor"><span id="researchBacktestColumnLabel">SMA PF / p-value</span> <i></i></button></th>
+                  <th><button type="button" data-research-sort="evidenceScore"><span id="researchBacktestColumnLabel">Evidence score / gate</span> <i></i></button></th>
                 </tr></thead>
                 <tbody id="researchTableBody"><tr><td colspan="9">Loading stock evidence.</td></tr></tbody>
               </table>
@@ -553,6 +563,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=cross-strategy-fdr-v37" defer></script>
+  <script src="app.js?v=responsive-oos-cache-v40" defer></script>
 </body>
 </html>

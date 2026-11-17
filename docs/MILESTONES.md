@@ -192,14 +192,171 @@ stock belongs in that cell. No order placement is in scope.
       q-values. Selected-stock evidence publishes the frozen
       training, untouched chronological test and point-in-time-admitted rolling
       test significance separately.
-   8. **Evidence-gated ranking.** Replace raw profit-factor-only ordering with a
-      composite research score using out-of-sample profit factor, net trade edge,
-      sample size, confidence, drawdown, excess return, exposure, turnover, costs
-      and period stability. Do not rank observations that fail evidence gates.
-   9. **Regime-conditioned results.** Partition evidence across bull, bear and
-      sideways markets; high- and low-volatility states; strong and weak breadth;
-      rate environments; and sector-leadership conditions. Show whether the
-      current regime resembles the conditions in which a model historically held.
+   8. **Evidence-gated ranking — complete.** Raw profit-factor ordering is
+      replaced by a versioned 100-point full-history OOS score spanning median
+      net profit factor, net trade edge, completed-trade sample, adjusted OOS
+      confidence, worst drawdown, excess return, exposure, turnover, estimated
+      costs and positive-fold stability. Every walk-forward test fold now checks
+      both the completeness of its dated NIFTY 500 reconstruction and whether the
+      specific stock was actually a constituent on that date. Within-strategy OOS
+      p-values receive Benjamini-Hochberg correction. Strategy endpoints populate
+      the ten-strategy OOS family incrementally as models are opened, and the
+      combined FDR is published only after all strategy caches are complete.
+      Ordinary page reads never launch the complete CPU-heavy family inside the
+      request server; an explicit maintenance request can still opt into that
+      build. Browser data contracts also have bounded request deadlines, so a slow
+      source cannot leave the refresh control permanently busy.
+      A result is ranked only when every OOS stability, within-strategy and combined
+      all-strategy gate passes. Failed observations remain visible as `Not ranked`,
+      with their diagnostic score and exact failed checks disclosed rather than
+      hidden. Cached strategy families are keyed to the Workspace database version
+      and automatically invalidate after data changes.
+   9. **Top-down opportunity engine — next.** Build a trader-focused research
+      hierarchy that identifies sectors and stocks primed for outsized movement:
+      market regime → sector trend → stock leadership → entry trigger → F&O state
+      → full-history OOS evidence. Implement it in dependency order:
+
+      1. **Forward-move label contract — complete.** The versioned
+         `forward-move-labels-v1` backend contract freezes 5/10/20/60-session
+         forward return, exact-session sector and NIFTY 50 relative return,
+         MFE, MAE, time-to-extreme and a 1.5-sigma volatility-normalised
+         `large_move` label. The feature candle is excluded from every outcome
+         path, ex-ante volatility uses only closes known at the feature close,
+         and incomplete future tails or missing references are disclosed rather
+         than inferred. The symbol-level API is
+         `/api/research/forward-move-labels`;
+      2. **Point-in-time feature ledger — complete.** Added the persistent
+         `opportunity-feature-ledger-v1` contract with one dated row per
+         investable NIFTY 500 member. It records only information available at
+         the completed close: dated membership and classification provenance,
+         5/20/60/120-session trailing returns, MA distance and slope, realised
+         volatility, volume participation, market breadth, equal-weight sector
+         returns/breadth/ranks, stock ranks and same-contract F&O state. Future-
+         dated classifications remain null with an explicit missing reason, and
+         the schema contains no forward-label fields. Build and query endpoints
+         are `/api/research/feature-ledger/build` and
+         `/api/research/feature-ledger`. The first live 13-Nov-2026 sample stores
+         500 investable rows: 495 priced, 20 sectors and 217 F&O observations;
+      3. **Market-regime layer — complete.** Added the frozen
+         `market-regime-classification-v1` contract and persistent regime ledger.
+         It classifies trend direction/strength, range/transition/expansion,
+         annualised volatility and 50DMA/200DMA breadth using completed-session
+         feature rows only. A 95% priced and breadth coverage gate is enforced;
+         strategy results, trades and forward labels are excluded by schema and
+         test. Build/history endpoints are `/api/research/market-regimes/build`
+         and `/api/research/market-regimes`. A bounded maintenance backfill—not
+         callable by ordinary page reads—produced 20 audited sessions from
+         16-Oct through 13-Nov-2026: 8 bearish-trend, 5 transition and 7 bullish-
+         trend. Trade counts stay explicitly unjoined until crossover
+         conditioning. The latest state is moderate bullish/transition, normal
+         volatility and positive breadth, but remains descriptive-only while the
+         point-in-time universe review gate is incomplete;
+      4. **Sector-trend layer — complete.** Added the frozen
+         `sector-trend-classification-v1` contract and persistent sector ledger.
+         It ranks dated sectors on equal-weight 20/60/120-session relative
+         strength versus NIFTY 50, 50DMA breadth, three-MA alignment, 20DMA
+         slope, five-session persistence/acceleration and ten-session realised-
+         volatility expansion. An 80% constituent/input coverage gate withholds
+         the state instead of filling missing evidence. States are rule-based
+         `leading`, `improving`, `neutral`, `weakening` or `lagging`; forward
+         outcomes and strategy results are excluded by schema and test. Build
+         and history endpoints are `/api/research/sector-trends/build` and
+         `/api/research/sector-trends`. The bounded 20-session audit stores 20
+         sectors per date; the latest session classifies 19 sectors and gates
+         Realty at 78.6% coverage. Published ranks remain descriptive-only while
+         the point-in-time universe review gate is incomplete;
+      5. **Stock leadership and pre-trigger priming — complete.** Added the
+         persistent `stock-leadership-priming-v1` contract. Each dated stock is
+         ranked inside its sector and versus NIFTY 50 on 20/60/120-session
+         relative strength, with five-session persistence and acceleration,
+         three-MA alignment, 20/50 crossover age, 20-vs-60 range compression,
+         prior-20-session-high proximity, volatility expansion, available volume
+         participation and same-session F&O eligibility/state. Frozen rules
+         separate `leading`, `improving`, `neutral`, `weakening` and `lagging`
+         leadership and distinguish `approaching_trigger`, `triggered`,
+         `extended`, `conflicted` and `unprimed` setups. A `Primed` or
+         `approaching_trigger` result cannot bypass sector confirmation. Missing
+         history or a gated sector remains explicitly unclassified. Build/query
+         endpoints are `/api/research/stock-leadership/build` and
+         `/api/research/stock-leadership`. The 20-session audit stores 500 stocks
+         per date; on 13-Nov-2026, 477 classify and 23 are gated. No stock is
+         top-down primed because no sector is then leading/improving versus NIFTY
+         50; one completed-close trigger remains visible as descriptive evidence;
+      6. **Condition frozen crossover baselines — complete.** Added the
+         `crossover-state-conditioning-v1` contract for the unchanged 20/50 SMA
+         and 20/50 EMA models. Each completed trade now carries its dated entry
+         signal/execution, exit, gross/net return, holding-period MFE/MAE and
+         move-capture ratio without changing next-session-open execution or the
+         published cost schedule. Entry dates join only to admissible frozen
+         market-regime, sector-state, stock-leadership and setup-state rows. The
+         conditioning ledger publishes state observations, completed trades,
+         gross/net expectancy, profit factor, worst per-stock conditioned
+         drawdown and average move capture. A 15-trade gate labels a bucket
+         `descriptive_sample_sufficient` or `insufficient_evidence`; neither is
+         an OOS edge claim. The bounded state history was extended to 100 sessions
+         and joins 416 of 2,624 completed baseline trades. Every sample-sufficient
+         bucket has negative net expectancy; the only positive bucket—SMA in
+         neutral stock leadership—has just 10 trades and remains insufficient.
+         Build/query endpoints are `/api/research/crossover-conditioning/build`
+         and `/api/research/crossover-conditioning`;
+      7. **Align and measure F&O positioning — complete.** Extended the frozen
+         crossover-conditioning contract with same-contract entry-date F&O
+         states: long build-up, short covering, short build-up, long unwinding
+         and neutral (`no_clear_signal`). It retains the existing front-month,
+         prior-completed-session, maximum-seven-day-gap and positive-baseline
+         safeguards; expiry/roll changes, stale gaps and missing baselines stay
+         unavailable. Availability is explicit: 17,545 of 43,352 admissible
+         stock-state observations and 179 of 416 joined completed trades have an
+         F&O state. All F&O-conditioned buckets have negative net expectancy.
+         The larger short-covering, neutral and long-unwinding samples clear the
+         15-trade descriptive gate but do not show edge; long/short build-up
+         remains insufficient for at least one baseline. The remaining 237
+         joined trades are disclosed as F&O-unavailable and are never assigned a
+         state or silently excluded from the simpler baseline;
+      8. **Run the frozen ablation ladder — complete, model rejected.** Added the
+         persistent `crossover-top-down-ablation-v1` contract and build/query APIs
+         at `/api/research/crossover-ablation/build` and
+         `/api/research/crossover-ablation`. The predeclared nested rules are:
+         unchanged crossover; + bullish/transition market regime; +
+         leading/improving sector; + leading/improving stock in a primed,
+         approaching or triggered setup; + same-contract long build-up or short
+         covering. Each stage discloses missing-state attrition separately from
+         filter exclusions and reports retention, net expectancy, profit factor,
+         worst per-stock drawdown and move capture. From 2,624 baseline trades,
+         market conditioning retains 99 SMA and 88 EMA trades and worsens net
+         expectancy from -1.02%/-1.50% to -3.03%/-5.12%. Sector conditioning
+         retains 47/41 and worsens it again. Stock priming retains only seven
+         trades for each model; F&O retains three SMA and two EMA trades. No
+         admissible stage shows incremental improvement, and the complete model
+         is rejected rather than scored;
+      9. **Complete-model OOS admission — complete, both strategies rejected.**
+         Added the persistent `top-down-oos-admission-v1` contract and build/query
+         APIs at `/api/research/top-down-oos-admission/build` and
+         `/api/research/top-down-oos-admission`. Its frozen pre-admission gates
+         require every ablation step to improve, at least 15 final-stage trades,
+         positive net expectancy, net profit factor above one and 95% dated-state
+         coverage before walk-forward, bootstrap or FDR scoring may run. SMA has
+         3 final-stage trades, -3.43% net expectancy, 0.22 profit factor and 17.0%
+         state coverage; EMA has 2 trades, -4.31%, 0.00 and 14.5%. Both are
+         rejected with null OOS scores. Walk-forward/bootstrap/within-strategy
+         FDR are recorded `not_run_pre_admission_failed`; the invalidated cross-
+         strategy family has zero current hypotheses and is explicitly
+         incomplete, never treated as a pass. Existing next-session execution,
+         costs and point-in-time joins remain enforced; and
+      10. **Make the opportunity-board release decision — complete; board
+          withheld.** Persisted the `opportunity-board-release-v1` contract and
+          exposed build/query APIs. It authorises a board only when at least one
+          strategy has passed the frozen OOS admission contract. The present
+          ledger records zero admitted and two rejected strategies, so the UI
+          publishes only a research-status explanation. Opportunity ranks,
+          scores, trade labels, targets, position sizes and order controls remain
+          prohibited. A future iteration must start as a separately specified
+          research cycle with hypotheses frozen before results are inspected.
+
+      The objective is tradable anticipation and ranking, not a causal explanation
+      of prior moves. Composite weights and UI rankings remain deferred until each
+      added layer demonstrates incremental out-of-sample value against the simpler
+      frozen model.
    10. **Engine modularisation and performance.** Split data quality, execution,
        metrics, statistics, ranking, regimes and strategy families into focused
        modules. Add versioned result caches, incremental EOD recalculation,

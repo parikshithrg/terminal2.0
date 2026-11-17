@@ -812,8 +812,300 @@ def ensure_workspace_schema(path: Path = DEFAULT_MARKET_DB) -> None:
                 ON fno_archive_files(status, session_date);
             CREATE INDEX IF NOT EXISTS futures_eod_contract_date_idx
                 ON futures_eod_snapshots(contract_key, session_date);
+            CREATE TABLE IF NOT EXISTS opportunity_feature_ledger (
+                contract_version TEXT NOT NULL,
+                session_date TEXT NOT NULL,
+                instrument_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                membership_status TEXT NOT NULL,
+                ranking_admissible INTEGER NOT NULL CHECK(ranking_admissible IN (0, 1)),
+                membership_role TEXT,
+                nifty500_member INTEGER NOT NULL CHECK(nifty500_member IN (0, 1)),
+                sector TEXT,
+                sector_source_date TEXT,
+                size_bucket TEXT,
+                size_source_date TEXT,
+                fno_eligible INTEGER CHECK(fno_eligible IN (0, 1)),
+                close REAL,
+                return_5d_pct REAL,
+                return_20d_pct REAL,
+                return_60d_pct REAL,
+                return_120d_pct REAL,
+                distance_sma20_pct REAL,
+                distance_sma50_pct REAL,
+                distance_sma200_pct REAL,
+                sma20_slope_5d_pct REAL,
+                sma20_50_spread_pct REAL,
+                sma20_50_crossover_age_sessions INTEGER,
+                realised_volatility_20d_pct REAL,
+                realised_volatility_60d_pct REAL,
+                volatility_expansion_ratio_20v60 REAL,
+                range_compression_ratio_20v60 REAL,
+                breakout_proximity_20d_pct REAL,
+                volume_ratio_20d REAL,
+                market_return_20d_pct REAL,
+                market_return_60d_pct REAL,
+                market_return_120d_pct REAL,
+                market_distance_sma200_pct REAL,
+                market_volatility_20d_pct REAL,
+                market_breadth_50dma_pct REAL,
+                market_breadth_200dma_pct REAL,
+                sector_return_20d_pct REAL,
+                sector_return_60d_pct REAL,
+                sector_return_120d_pct REAL,
+                sector_breadth_50dma_pct REAL,
+                sector_rank_20d INTEGER,
+                stock_sector_rank_20d INTEGER,
+                stock_universe_rank_20d INTEGER,
+                fno_state TEXT,
+                fno_price_change_pct REAL,
+                fno_oi_change_pct REAL,
+                fno_contract_key TEXT,
+                source_dates_json TEXT NOT NULL,
+                missing_features_json TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY(contract_version, session_date, instrument_id)
+            );
+            CREATE INDEX IF NOT EXISTS opportunity_feature_ledger_session_idx
+                ON opportunity_feature_ledger(session_date, sector, symbol);
+            CREATE INDEX IF NOT EXISTS opportunity_feature_ledger_symbol_idx
+                ON opportunity_feature_ledger(symbol, session_date);
+            CREATE TABLE IF NOT EXISTS market_regime_ledger (
+                contract_version TEXT NOT NULL,
+                session_date TEXT NOT NULL,
+                classification_status TEXT NOT NULL,
+                ranking_admissible INTEGER NOT NULL CHECK(ranking_admissible IN (0, 1)),
+                regime_family TEXT,
+                trend_direction TEXT,
+                trend_strength TEXT,
+                range_state TEXT,
+                volatility_state TEXT,
+                breadth_state TEXT,
+                regime_key TEXT,
+                market_return_20d_pct REAL,
+                market_distance_sma200_pct REAL,
+                market_volatility_20d_pct REAL,
+                market_breadth_50dma_pct REAL,
+                market_breadth_200dma_pct REAL,
+                universe_rows INTEGER NOT NULL,
+                priced_rows INTEGER NOT NULL,
+                breadth_50dma_denominator INTEGER NOT NULL,
+                breadth_200dma_denominator INTEGER NOT NULL,
+                priced_coverage_ratio REAL,
+                breadth_50dma_coverage_ratio REAL,
+                breadth_200dma_coverage_ratio REAL,
+                source_dates_json TEXT NOT NULL,
+                missing_inputs_json TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY(contract_version, session_date)
+            );
+            CREATE INDEX IF NOT EXISTS market_regime_ledger_state_idx
+                ON market_regime_ledger(regime_family, session_date);
+            CREATE TABLE IF NOT EXISTS sector_trend_ledger (
+                contract_version TEXT NOT NULL,
+                session_date TEXT NOT NULL,
+                sector TEXT NOT NULL,
+                classification_status TEXT NOT NULL,
+                ranking_admissible INTEGER NOT NULL CHECK(ranking_admissible IN (0, 1)),
+                sector_state TEXT,
+                member_count INTEGER NOT NULL,
+                priced_count INTEGER NOT NULL,
+                constituent_coverage_ratio REAL NOT NULL,
+                return_20d_coverage_ratio REAL NOT NULL,
+                return_60d_coverage_ratio REAL NOT NULL,
+                return_120d_coverage_ratio REAL NOT NULL,
+                sector_return_20d_pct REAL,
+                sector_return_60d_pct REAL,
+                sector_return_120d_pct REAL,
+                market_return_20d_pct REAL,
+                market_return_60d_pct REAL,
+                market_return_120d_pct REAL,
+                relative_strength_20d_pct REAL,
+                relative_strength_60d_pct REAL,
+                relative_strength_120d_pct REAL,
+                rank_20d INTEGER,
+                rank_60d INTEGER,
+                rank_120d INTEGER,
+                breadth_50dma_pct REAL,
+                ma_alignment_pct REAL,
+                average_sma20_slope_5d_pct REAL,
+                realised_volatility_20d_pct REAL,
+                persistence_ratio REAL,
+                acceleration_5_sessions_pct REAL,
+                volatility_expansion_ratio REAL,
+                source_dates_json TEXT NOT NULL,
+                missing_inputs_json TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY(contract_version, session_date, sector)
+            );
+            CREATE INDEX IF NOT EXISTS sector_trend_ledger_state_idx
+                ON sector_trend_ledger(sector_state, session_date, sector);
+            CREATE INDEX IF NOT EXISTS sector_trend_ledger_sector_idx
+                ON sector_trend_ledger(sector, session_date);
+            CREATE TABLE IF NOT EXISTS stock_leadership_ledger (
+                contract_version TEXT NOT NULL,
+                session_date TEXT NOT NULL,
+                instrument_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                sector TEXT,
+                classification_status TEXT NOT NULL,
+                ranking_admissible INTEGER NOT NULL CHECK(ranking_admissible IN (0, 1)),
+                leadership_state TEXT,
+                setup_state TEXT,
+                sector_state TEXT,
+                return_20d_pct REAL,
+                return_60d_pct REAL,
+                return_120d_pct REAL,
+                relative_nifty_20d_pct REAL,
+                relative_nifty_60d_pct REAL,
+                relative_nifty_120d_pct REAL,
+                relative_sector_20d_pct REAL,
+                relative_sector_60d_pct REAL,
+                relative_sector_120d_pct REAL,
+                sector_rank_20d INTEGER,
+                stock_sector_rank_20d INTEGER,
+                stock_sector_rank_60d INTEGER,
+                stock_sector_rank_120d INTEGER,
+                stock_universe_rank_20d INTEGER,
+                stock_universe_rank_60d INTEGER,
+                stock_universe_rank_120d INTEGER,
+                relative_strength_persistence_ratio REAL,
+                relative_strength_acceleration_5_sessions_pct REAL,
+                ma_alignment TEXT,
+                sma20_slope_5d_pct REAL,
+                sma20_50_spread_pct REAL,
+                sma20_50_crossover_age_sessions INTEGER,
+                range_compression_ratio_20v60 REAL,
+                breakout_proximity_20d_pct REAL,
+                volatility_expansion_ratio_20v60 REAL,
+                volume_ratio_20d REAL,
+                participation_status TEXT,
+                fno_eligible INTEGER NOT NULL CHECK(fno_eligible IN (0, 1)),
+                fno_state TEXT,
+                source_dates_json TEXT NOT NULL,
+                missing_inputs_json TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY(contract_version, session_date, instrument_id)
+            );
+            CREATE INDEX IF NOT EXISTS stock_leadership_ledger_state_idx
+                ON stock_leadership_ledger(leadership_state, setup_state, session_date);
+            CREATE INDEX IF NOT EXISTS stock_leadership_ledger_sector_idx
+                ON stock_leadership_ledger(sector, session_date, stock_sector_rank_20d);
+            CREATE INDEX IF NOT EXISTS stock_leadership_ledger_symbol_idx
+                ON stock_leadership_ledger(symbol, session_date);
+            CREATE TABLE IF NOT EXISTS crossover_conditioning_ledger (
+                contract_version TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                strategy TEXT NOT NULL,
+                dimension TEXT NOT NULL,
+                state TEXT NOT NULL,
+                state_observations INTEGER NOT NULL,
+                completed_trades INTEGER NOT NULL,
+                gross_trade_expectancy_pct REAL,
+                net_trade_expectancy_pct REAL,
+                gross_profit_factor REAL,
+                net_profit_factor REAL,
+                net_maximum_drawdown_pct REAL,
+                average_move_capture_ratio REAL,
+                evidence_status TEXT NOT NULL,
+                missing_evidence_json TEXT NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY(contract_version, strategy, dimension, state)
+            );
+            CREATE INDEX IF NOT EXISTS crossover_conditioning_ledger_dimension_idx
+                ON crossover_conditioning_ledger(dimension, state, strategy);
+            CREATE TABLE IF NOT EXISTS crossover_ablation_ledger (
+                contract_version TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                strategy TEXT NOT NULL,
+                stage_order INTEGER NOT NULL,
+                stage_key TEXT NOT NULL,
+                stage_label TEXT NOT NULL,
+                prior_stage_trades INTEGER,
+                state_eligible_trades INTEGER NOT NULL,
+                unavailable_state_trades INTEGER NOT NULL,
+                filter_excluded_trades INTEGER NOT NULL,
+                completed_trades INTEGER NOT NULL,
+                baseline_retention_ratio REAL NOT NULL,
+                gross_trade_expectancy_pct REAL,
+                net_trade_expectancy_pct REAL,
+                gross_profit_factor REAL,
+                net_profit_factor REAL,
+                net_maximum_drawdown_pct REAL,
+                average_move_capture_ratio REAL,
+                delta_net_expectancy_pct REAL,
+                delta_net_profit_factor REAL,
+                delta_net_drawdown_pct REAL,
+                delta_move_capture_ratio REAL,
+                sample_status TEXT NOT NULL,
+                incremental_status TEXT NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY(contract_version, strategy, stage_key)
+            );
+            CREATE INDEX IF NOT EXISTS crossover_ablation_ledger_stage_idx
+                ON crossover_ablation_ledger(stage_order, strategy);
+            CREATE TABLE IF NOT EXISTS top_down_oos_admission_ledger (
+                contract_version TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                strategy TEXT NOT NULL,
+                admission_decision TEXT NOT NULL,
+                ablation_gate_passed INTEGER NOT NULL CHECK(ablation_gate_passed IN (0, 1)),
+                minimum_trade_gate_passed INTEGER NOT NULL CHECK(minimum_trade_gate_passed IN (0, 1)),
+                positive_net_expectancy_gate_passed INTEGER NOT NULL CHECK(positive_net_expectancy_gate_passed IN (0, 1)),
+                profit_factor_gate_passed INTEGER NOT NULL CHECK(profit_factor_gate_passed IN (0, 1)),
+                state_coverage_gate_passed INTEGER NOT NULL CHECK(state_coverage_gate_passed IN (0, 1)),
+                final_stage_trades INTEGER NOT NULL,
+                final_stage_net_expectancy_pct REAL,
+                final_stage_net_profit_factor REAL,
+                state_coverage_ratio REAL NOT NULL,
+                walk_forward_status TEXT NOT NULL,
+                bootstrap_status TEXT NOT NULL,
+                within_strategy_fdr_status TEXT NOT NULL,
+                cross_strategy_fdr_status TEXT NOT NULL,
+                oos_score REAL,
+                failure_reasons_json TEXT NOT NULL,
+                audit_json TEXT NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY(contract_version, strategy)
+            );
+            CREATE TABLE IF NOT EXISTS opportunity_board_release_ledger (
+                contract_version TEXT PRIMARY KEY,
+                generated_at TEXT NOT NULL,
+                release_decision TEXT NOT NULL,
+                board_authorised INTEGER NOT NULL CHECK(board_authorised IN (0, 1)),
+                ui_mode TEXT NOT NULL,
+                admitted_strategies INTEGER NOT NULL,
+                rejected_strategies INTEGER NOT NULL,
+                headline TEXT NOT NULL,
+                explanation TEXT NOT NULL,
+                failure_reasons_json TEXT NOT NULL,
+                next_action TEXT NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 1
+            );
             """
         )
+        feature_columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(opportunity_feature_ledger)")
+        }
+        feature_migrations = {
+            "market_return_60d_pct": "REAL",
+            "market_return_120d_pct": "REAL",
+            "sma20_50_spread_pct": "REAL",
+            "sma20_50_crossover_age_sessions": "INTEGER",
+            "realised_volatility_60d_pct": "REAL",
+            "volatility_expansion_ratio_20v60": "REAL",
+            "range_compression_ratio_20v60": "REAL",
+            "breakout_proximity_20d_pct": "REAL",
+        }
+        for column, data_type in feature_migrations.items():
+            if column not in feature_columns:
+                connection.execute(
+                    f"ALTER TABLE opportunity_feature_ledger ADD COLUMN {column} {data_type}"
+                )
         # Older Workspace databases inherited a closed metric-name CHECK from
         # the PG-terminal seed. Workspace 2.0 owns this table now, so migrate it
         # to an extensible contract while preserving every stored observation.
@@ -1557,6 +1849,2810 @@ def _instrument_series(connection: sqlite3.Connection, instrument_id: str) -> li
         "SELECT session_date, open, high, low, close, volume FROM candles WHERE instrument_id=? ORDER BY session_date",
         (instrument_id,),
     ).fetchall()
+
+
+FORWARD_MOVE_HORIZONS = (5, 10, 20, 60)
+FORWARD_MOVE_VOLATILITY_LOOKBACK = 20
+FORWARD_MOVE_LARGE_MOVE_SIGMA = 1.5
+
+
+def _price_row_value(row: Any, key: str, default: Any = None) -> Any:
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
+def _normalise_forward_price_rows(rows: list[Any], series_name: str) -> list[dict[str, Any]]:
+    normalised: list[dict[str, Any]] = []
+    seen_sessions: set[str] = set()
+    for row in rows:
+        session = str(_price_row_value(row, "session_date", "")).strip()
+        try:
+            date.fromisoformat(session)
+        except ValueError as error:
+            raise ValueError(f"invalid_{series_name}_session_date") from error
+        if session in seen_sessions:
+            raise ValueError(f"duplicate_{series_name}_session")
+        seen_sessions.add(session)
+        try:
+            close = float(_price_row_value(row, "close"))
+            high = float(_price_row_value(row, "high", close))
+            low = float(_price_row_value(row, "low", close))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"invalid_{series_name}_price") from error
+        if not all(math.isfinite(value) and value > 0 for value in (close, high, low)):
+            raise ValueError(f"invalid_{series_name}_price")
+        if high < close or low > close or high < low:
+            raise ValueError(f"invalid_{series_name}_ohlc")
+        normalised.append({"session_date": session, "close": close, "high": high, "low": low})
+    normalised.sort(key=lambda row: row["session_date"])
+    return normalised
+
+
+def _trailing_daily_volatility(rows: list[dict[str, Any]], feature_index: int, lookback: int) -> float | None:
+    if feature_index < lookback:
+        return None
+    closes = [row["close"] for row in rows[feature_index - lookback:feature_index + 1]]
+    returns = [closes[index] / closes[index - 1] - 1.0 for index in range(1, len(closes))]
+    if len(returns) < 2:
+        return None
+    average = sum(returns) / len(returns)
+    variance = sum((value - average) ** 2 for value in returns) / (len(returns) - 1)
+    return math.sqrt(max(0.0, variance))
+
+
+def _reference_forward_return(
+    close_by_session: dict[str, float], feature_session: str, end_session: str,
+) -> float | None:
+    feature_close = close_by_session.get(feature_session)
+    end_close = close_by_session.get(end_session)
+    if feature_close is None or end_close is None or feature_close <= 0:
+        return None
+    return end_close / feature_close - 1.0
+
+
+def forward_move_label_contract(
+    stock_rows: list[Any],
+    sector_rows: list[Any] | None = None,
+    benchmark_rows: list[Any] | None = None,
+    *,
+    horizons: tuple[int, ...] = FORWARD_MOVE_HORIZONS,
+    volatility_lookback: int = FORWARD_MOVE_VOLATILITY_LOOKBACK,
+    large_move_sigma: float = FORWARD_MOVE_LARGE_MOVE_SIGMA,
+    feature_from: str | None = None,
+    feature_through: str | None = None,
+) -> dict[str, Any]:
+    """Create strictly forward completed-session move labels.
+
+    A feature is observed at a completed close. The outcome window starts on the
+    following stored session; the feature candle can never contribute to MFE,
+    MAE or the endpoint. Returns use the known feature close as their baseline.
+    Ex-ante volatility uses only closes at or before the feature timestamp.
+    """
+    cleaned_horizons = tuple(sorted(set(int(value) for value in horizons)))
+    if not cleaned_horizons or cleaned_horizons[0] <= 0 or cleaned_horizons[-1] > 252:
+        raise ValueError("invalid_forward_move_horizons")
+    if volatility_lookback < 2:
+        raise ValueError("invalid_forward_move_volatility_lookback")
+    if not math.isfinite(large_move_sigma) or large_move_sigma <= 0:
+        raise ValueError("invalid_forward_move_sigma")
+    if feature_from:
+        date.fromisoformat(feature_from)
+    if feature_through:
+        date.fromisoformat(feature_through)
+    if feature_from and feature_through and feature_from > feature_through:
+        raise ValueError("invalid_forward_move_feature_window")
+
+    stock = _normalise_forward_price_rows(stock_rows, "stock")
+    sector = _normalise_forward_price_rows(sector_rows or [], "sector")
+    benchmark = _normalise_forward_price_rows(benchmark_rows or [], "benchmark")
+    sector_closes = {row["session_date"]: row["close"] for row in sector}
+    benchmark_closes = {row["session_date"]: row["close"] for row in benchmark}
+    horizon_counts = {str(horizon): 0 for horizon in cleaned_horizons}
+    tail_censored = {str(horizon): 0 for horizon in cleaned_horizons}
+    missing_sector = {str(horizon): 0 for horizon in cleaned_horizons}
+    missing_benchmark = {str(horizon): 0 for horizon in cleaned_horizons}
+    labels: list[dict[str, Any]] = []
+    features_considered = 0
+    volatility_ready = 0
+
+    for feature_index, feature in enumerate(stock):
+        feature_session = feature["session_date"]
+        if feature_from and feature_session < feature_from:
+            continue
+        if feature_through and feature_session > feature_through:
+            continue
+        features_considered += 1
+        trailing_volatility = _trailing_daily_volatility(stock, feature_index, volatility_lookback)
+        outcomes: dict[str, dict[str, Any]] = {}
+        for horizon in cleaned_horizons:
+            key = str(horizon)
+            end_index = feature_index + horizon
+            if end_index >= len(stock):
+                tail_censored[key] += 1
+                continue
+            future_rows = stock[feature_index + 1:end_index + 1]
+            endpoint = stock[end_index]
+            stock_return = endpoint["close"] / feature["close"] - 1.0
+            sector_return = _reference_forward_return(
+                sector_closes, feature_session, endpoint["session_date"]
+            )
+            benchmark_return = _reference_forward_return(
+                benchmark_closes, feature_session, endpoint["session_date"]
+            )
+            if sector_return is None:
+                missing_sector[key] += 1
+            if benchmark_return is None:
+                missing_benchmark[key] += 1
+            maximum_high_index = max(range(len(future_rows)), key=lambda index: future_rows[index]["high"])
+            maximum_high = future_rows[maximum_high_index]["high"]
+            minimum_low_index = min(range(len(future_rows)), key=lambda index: future_rows[index]["low"])
+            minimum_low = future_rows[minimum_low_index]["low"]
+            expected_volatility = (
+                trailing_volatility * math.sqrt(horizon)
+                if trailing_volatility is not None else None
+            )
+            volatility_normalised_move = (
+                abs(stock_return) / expected_volatility
+                if expected_volatility is not None and expected_volatility > 0 else None
+            )
+            if trailing_volatility is None:
+                large_move_reason = "insufficient_ex_ante_volatility_history"
+            elif expected_volatility == 0:
+                large_move_reason = "zero_ex_ante_volatility"
+            else:
+                large_move_reason = "evaluated"
+            outcomes[key] = {
+                "horizon_sessions": horizon,
+                "label_start_session": future_rows[0]["session_date"],
+                "label_end_session": endpoint["session_date"],
+                "forward_return_pct": _round(stock_return * 100, 6),
+                "sector_forward_return_pct": (
+                    _round(sector_return * 100, 6) if sector_return is not None else None
+                ),
+                "relative_to_sector_pct": (
+                    _round((stock_return - sector_return) * 100, 6)
+                    if sector_return is not None else None
+                ),
+                "nifty50_forward_return_pct": (
+                    _round(benchmark_return * 100, 6) if benchmark_return is not None else None
+                ),
+                "relative_to_nifty50_pct": (
+                    _round((stock_return - benchmark_return) * 100, 6)
+                    if benchmark_return is not None else None
+                ),
+                "maximum_favourable_excursion_pct": _round(
+                    (maximum_high / feature["close"] - 1.0) * 100, 6
+                ),
+                "maximum_adverse_excursion_pct": _round(
+                    (minimum_low / feature["close"] - 1.0) * 100, 6
+                ),
+                "time_to_maximum_move_sessions": maximum_high_index + 1,
+                "time_to_minimum_move_sessions": minimum_low_index + 1,
+                "ex_ante_daily_volatility_pct": (
+                    _round(trailing_volatility * 100, 6)
+                    if trailing_volatility is not None else None
+                ),
+                "horizon_expected_volatility_pct": (
+                    _round(expected_volatility * 100, 6)
+                    if expected_volatility is not None else None
+                ),
+                "volatility_normalised_move": (
+                    _round(volatility_normalised_move, 6)
+                    if volatility_normalised_move is not None else None
+                ),
+                "large_move": (
+                    volatility_normalised_move >= large_move_sigma
+                    if volatility_normalised_move is not None else None
+                ),
+                "large_move_direction": (
+                    "up" if stock_return > 0 else "down" if stock_return < 0 else "flat"
+                ),
+                "large_move_reason": large_move_reason,
+            }
+            horizon_counts[key] += 1
+        if outcomes:
+            if trailing_volatility is not None:
+                volatility_ready += 1
+            labels.append({
+                "feature_session": feature_session,
+                "feature_close": _round(feature["close"], 6),
+                "outcomes": outcomes,
+            })
+
+    return {
+        "ok": bool(stock),
+        "contract_version": "forward-move-labels-v1",
+        "definition": {
+            "feature_timestamp": "completed_session_close",
+            "outcome_window": "subsequent_completed_sessions_only",
+            "return_baseline": "feature_session_close",
+            "endpoint": "future_horizon_session_close",
+            "excursion_prices": "future_session_highs_and_lows_excluding_feature_candle",
+            "relative_return_method": "stock_return_minus_reference_return_on_exact_aligned_sessions",
+            "volatility_estimator": "sample_standard_deviation_of_trailing_close_to_close_returns",
+            "volatility_lookback_sessions": volatility_lookback,
+            "large_move_rule": "absolute_forward_return_at_least_sigma_times_expected_horizon_volatility",
+            "large_move_sigma": large_move_sigma,
+            "horizons_sessions": list(cleaned_horizons),
+            "no_look_ahead_enforced": True,
+        },
+        "coverage": {
+            "stored_stock_sessions": len(stock),
+            "feature_rows_considered": features_considered,
+            "feature_rows_with_any_label": len(labels),
+            "feature_rows_with_ex_ante_volatility": volatility_ready,
+            "labels_by_horizon": horizon_counts,
+            "tail_censored_by_horizon": tail_censored,
+            "missing_sector_reference_by_horizon": missing_sector,
+            "missing_nifty50_reference_by_horizon": missing_benchmark,
+            "feature_from": feature_from,
+            "feature_through": feature_through,
+        },
+        "labels": labels,
+        "limitations": [
+            "Labels are research outcomes, not forecasts or order instructions.",
+            "Tail observations without the complete future horizon are censored rather than inferred.",
+            "Sector and NIFTY 50 relative outcomes require exact feature and endpoint sessions.",
+            "The binary large-move threshold is frozen; continuous returns and excursions remain primary evidence.",
+        ],
+    }
+
+
+def forward_move_labels(
+    market_db: Path = DEFAULT_MARKET_DB,
+    symbol: str | None = None,
+    sector_index: str | None = None,
+    feature_from: str | None = None,
+    feature_through: str | None = None,
+) -> dict[str, Any]:
+    if not symbol or not str(symbol).strip():
+        raise ValueError("symbol_required")
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        stock_instrument_id = (
+            str(symbol).strip() if str(symbol).startswith("stock:")
+            else f"stock:{str(symbol).strip().upper()}"
+        )
+        instrument = connection.execute(
+            "SELECT instrument_id,display_name,source,updated_at FROM instruments WHERE instrument_id=? AND kind='stock'",
+            (stock_instrument_id,),
+        ).fetchone()
+        if not instrument:
+            return {"ok": False, "reason": "stock_instrument_not_found", "symbol": str(symbol).strip().upper()}
+        benchmark_instrument_id = "index:Nifty 50"
+        benchmark_rows = _instrument_series(connection, benchmark_instrument_id)
+        sector_instrument_id = None
+        sector_rows: list[sqlite3.Row] = []
+        if sector_index:
+            sector_instrument_id = (
+                str(sector_index).strip() if str(sector_index).startswith("index:")
+                else f"index:{str(sector_index).strip()}"
+            )
+            sector_rows = _instrument_series(connection, sector_instrument_id)
+        payload = forward_move_label_contract(
+            _instrument_series(connection, stock_instrument_id),
+            sector_rows,
+            benchmark_rows,
+            feature_from=feature_from,
+            feature_through=feature_through,
+        )
+        payload["instrument"] = {
+            "instrument_id": instrument["instrument_id"],
+            "symbol": instrument["display_name"],
+            "source": instrument["source"],
+            "updated_at": instrument["updated_at"],
+        }
+        payload["references"] = {
+            "nifty50_instrument_id": benchmark_instrument_id,
+            "nifty50_status": "ready" if benchmark_rows else "unavailable",
+            "sector_instrument_id": sector_instrument_id,
+            "sector_status": (
+                "ready" if sector_rows else "not_requested" if not sector_index else "unavailable"
+            ),
+        }
+        return payload
+    finally:
+        connection.close()
+
+
+OPPORTUNITY_FEATURE_CONTRACT = "opportunity-feature-ledger-v1"
+OPPORTUNITY_FEATURE_HISTORY_SESSIONS = 205
+
+
+def _instrument_series_through(
+    connection: sqlite3.Connection, instrument_id: str, as_of_date: str,
+    limit: int = OPPORTUNITY_FEATURE_HISTORY_SESSIONS,
+) -> list[sqlite3.Row]:
+    return connection.execute(
+        """SELECT session_date,open,high,low,close,volume,source,retrieved_at
+           FROM (
+               SELECT session_date,open,high,low,close,volume,source,retrieved_at
+               FROM candles WHERE instrument_id=? AND session_date<=?
+               ORDER BY session_date DESC LIMIT ?
+           ) ORDER BY session_date""",
+        (instrument_id, as_of_date, limit),
+    ).fetchall()
+
+
+def _completed_session_price_features(rows: list[Any], as_of_date: str) -> dict[str, Any]:
+    try:
+        date.fromisoformat(as_of_date)
+    except ValueError as error:
+        raise ValueError("invalid_feature_session_date") from error
+    eligible_rows = [
+        row for row in rows
+        if str(_price_row_value(row, "session_date", "")) <= as_of_date
+    ]
+    prices = _normalise_forward_price_rows(eligible_rows, "feature")
+    missing: list[str] = []
+    if not prices or prices[-1]["session_date"] != as_of_date:
+        return {
+            "status": "missing_session",
+            "source_session": prices[-1]["session_date"] if prices else None,
+            "close": None,
+            "missing_features": ["completed_session_candle"],
+        }
+    closes = [row["close"] for row in prices]
+
+    def trailing_return(lookback: int) -> float | None:
+        return closes[-1] / closes[-1 - lookback] - 1.0 if len(closes) > lookback else None
+
+    def moving_average(window: int, end_offset: int = 0) -> float | None:
+        end = len(closes) - end_offset
+        start = end - window
+        return sum(closes[start:end]) / window if start >= 0 and end > start else None
+
+    returns = {lookback: trailing_return(lookback) for lookback in (5, 20, 60, 120)}
+    averages = {window: moving_average(window) for window in (20, 50, 200)}
+    previous_sma20 = moving_average(20, 5)
+    sma20_slope = (
+        averages[20] / previous_sma20 - 1.0
+        if averages[20] is not None and previous_sma20 not in (None, 0) else None
+    )
+    daily_volatility = _trailing_daily_volatility(prices, len(prices) - 1, 20)
+    daily_volatility_60 = _trailing_daily_volatility(prices, len(prices) - 1, 60)
+    sma20_50_spread = (
+        averages[20] / averages[50] - 1.0
+        if averages[20] not in (None, 0) and averages[50] not in (None, 0) else None
+    )
+    crossover_age = None
+    if sma20_50_spread is not None:
+        current_sign = 1 if sma20_50_spread >= 0 else -1
+        for offset in range(1, min(121, len(closes) - 49)):
+            prior20 = moving_average(20, offset)
+            prior50 = moving_average(50, offset)
+            if prior20 in (None, 0) or prior50 in (None, 0):
+                break
+            prior_sign = 1 if prior20 / prior50 - 1.0 >= 0 else -1
+            if prior_sign != current_sign:
+                crossover_age = offset
+                break
+    volatility_expansion = (
+        daily_volatility / daily_volatility_60
+        if daily_volatility is not None and daily_volatility_60 not in (None, 0) else None
+    )
+    range20 = None
+    range60 = None
+    if len(prices) >= 20:
+        highs20 = [float(row["high"]) for row in prices[-20:]]
+        lows20 = [float(row["low"]) for row in prices[-20:]]
+        if min(lows20) > 0:
+            range20 = max(highs20) / min(lows20) - 1.0
+    if len(prices) >= 60:
+        highs60 = [float(row["high"]) for row in prices[-60:]]
+        lows60 = [float(row["low"]) for row in prices[-60:]]
+        if min(lows60) > 0:
+            range60 = max(highs60) / min(lows60) - 1.0
+    range_compression = range20 / range60 if range20 is not None and range60 not in (None, 0) else None
+    prior_high20 = max(float(row["high"]) for row in prices[-21:-1]) if len(prices) >= 21 else None
+    breakout_proximity = closes[-1] / prior_high20 - 1.0 if prior_high20 not in (None, 0) else None
+    volumes: list[float] = []
+    for row in eligible_rows[-20:]:
+        value = _price_row_value(row, "volume")
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            volumes = []
+            break
+        if not math.isfinite(numeric) or numeric < 0:
+            volumes = []
+            break
+        volumes.append(numeric)
+    average_volume = sum(volumes) / len(volumes) if len(volumes) == 20 else None
+    volume_ratio = (
+        volumes[-1] / average_volume
+        if average_volume not in (None, 0) and volumes else None
+    )
+    output = {
+        "status": "ready",
+        "source_session": as_of_date,
+        "close": _round(closes[-1], 6),
+        "return_5d_pct": _round(returns[5] * 100, 6) if returns[5] is not None else None,
+        "return_20d_pct": _round(returns[20] * 100, 6) if returns[20] is not None else None,
+        "return_60d_pct": _round(returns[60] * 100, 6) if returns[60] is not None else None,
+        "return_120d_pct": _round(returns[120] * 100, 6) if returns[120] is not None else None,
+        "distance_sma20_pct": (
+            _round((closes[-1] / averages[20] - 1.0) * 100, 6) if averages[20] else None
+        ),
+        "distance_sma50_pct": (
+            _round((closes[-1] / averages[50] - 1.0) * 100, 6) if averages[50] else None
+        ),
+        "distance_sma200_pct": (
+            _round((closes[-1] / averages[200] - 1.0) * 100, 6) if averages[200] else None
+        ),
+        "sma20_slope_5d_pct": _round(sma20_slope * 100, 6) if sma20_slope is not None else None,
+        "sma20_50_spread_pct": _round(sma20_50_spread * 100, 6) if sma20_50_spread is not None else None,
+        "sma20_50_crossover_age_sessions": crossover_age,
+        "realised_volatility_20d_pct": (
+            _round(daily_volatility * math.sqrt(252) * 100, 6)
+            if daily_volatility is not None else None
+        ),
+        "realised_volatility_60d_pct": (
+            _round(daily_volatility_60 * math.sqrt(252) * 100, 6)
+            if daily_volatility_60 is not None else None
+        ),
+        "volatility_expansion_ratio_20v60": _round(volatility_expansion, 6),
+        "range_compression_ratio_20v60": _round(range_compression, 6),
+        "breakout_proximity_20d_pct": _round(breakout_proximity * 100, 6) if breakout_proximity is not None else None,
+        "volume_ratio_20d": _round(volume_ratio, 6) if volume_ratio is not None else None,
+        "missing_features": missing,
+    }
+    for key, value in output.items():
+        if key.endswith("_pct") or key in (
+            "volume_ratio_20d", "volatility_expansion_ratio_20v60",
+            "range_compression_ratio_20v60", "sma20_50_crossover_age_sessions",
+        ):
+            if value is None:
+                missing.append(key)
+    return output
+
+
+def _same_contract_fno_feature(
+    connection: sqlite3.Connection, symbol: str, as_of_date: str,
+) -> dict[str, Any]:
+    current = connection.execute(
+        """SELECT f.contract_key,f.tradingsymbol,f.expiry_date,s.session_date,
+                  s.close,s.open_interest,s.source,s.retrieved_at
+           FROM futures_contracts f JOIN futures_eod_snapshots s USING(contract_key)
+           WHERE f.underlying=? AND s.session_date=? AND f.expiry_date>=?
+           ORDER BY f.expiry_date LIMIT 1""",
+        (symbol, as_of_date, as_of_date),
+    ).fetchone()
+    if not current:
+        return {
+            "fno_eligible": False,
+            "state": None,
+            "missing_reason": "no_front_month_futures_observation",
+            "current_session": None,
+            "previous_session": None,
+        }
+    previous = connection.execute(
+        """SELECT session_date,close,open_interest,source,retrieved_at
+           FROM futures_eod_snapshots WHERE contract_key=? AND session_date<?
+           ORDER BY session_date DESC LIMIT 1""",
+        (current["contract_key"], as_of_date),
+    ).fetchone()
+    if not previous:
+        return {
+            "fno_eligible": True,
+            "contract_key": current["contract_key"],
+            "state": None,
+            "missing_reason": "same_contract_baseline_unavailable",
+            "current_session": current["session_date"],
+            "previous_session": None,
+        }
+    gap = (date.fromisoformat(current["session_date"]) - date.fromisoformat(previous["session_date"])).days
+    if gap < 1 or gap > 7 or float(previous["close"]) <= 0 or float(previous["open_interest"]) <= 0:
+        return {
+            "fno_eligible": True,
+            "contract_key": current["contract_key"],
+            "state": None,
+            "missing_reason": "same_contract_baseline_not_comparable",
+            "current_session": current["session_date"],
+            "previous_session": previous["session_date"],
+        }
+    price_change = 100 * (float(current["close"]) / float(previous["close"]) - 1.0)
+    oi_change = 100 * (float(current["open_interest"]) / float(previous["open_interest"]) - 1.0)
+    if abs(price_change) < 0.15 or abs(oi_change) < 0.5:
+        state = "no_clear_signal"
+    elif price_change >= 0 and oi_change >= 0:
+        state = "long_build_up"
+    elif price_change < 0 and oi_change >= 0:
+        state = "short_build_up"
+    elif price_change < 0 and oi_change < 0:
+        state = "long_unwinding"
+    else:
+        state = "short_covering"
+    return {
+        "fno_eligible": True,
+        "contract_key": current["contract_key"],
+        "tradingsymbol": current["tradingsymbol"],
+        "expiry_date": current["expiry_date"],
+        "state": state,
+        "price_change_pct": _round(price_change, 6),
+        "oi_change_pct": _round(oi_change, 6),
+        "missing_reason": None,
+        "current_session": current["session_date"],
+        "previous_session": previous["session_date"],
+        "source": current["source"],
+        "retrieved_at": current["retrieved_at"],
+    }
+
+
+def _assign_descending_rank(rows: list[dict[str, Any]], value_key: str, rank_key: str) -> None:
+    ranked = sorted(
+        (row for row in rows if row.get(value_key) is not None),
+        key=lambda row: (-float(row[value_key]), str(row.get("symbol") or row.get("sector") or "")),
+    )
+    for position, row in enumerate(ranked, start=1):
+        row[rank_key] = position
+
+
+def _build_opportunity_feature_rows(
+    connection: sqlite3.Connection,
+    as_of_date: str,
+    universe: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        date.fromisoformat(as_of_date)
+    except ValueError as error:
+        raise ValueError("invalid_feature_session_date") from error
+    if not universe.get("ok"):
+        return {"ok": False, "reason": universe.get("reason", "point_in_time_universe_unavailable")}
+    members = [row for row in universe.get("members", []) if row.get("is_investable", True)]
+    excluded_non_investable = len(universe.get("members", [])) - len(members)
+    market_features = _completed_session_price_features(
+        _instrument_series_through(connection, "index:Nifty 50", as_of_date), as_of_date
+    )
+    classification_audit = universe.get("coverage", {}).get("classification_audit", {})
+    size_source_date = classification_audit.get("size_provenance", {}).get("source_date")
+    generated_at = datetime.now(timezone.utc).isoformat()
+    rows: list[dict[str, Any]] = []
+    for member in members:
+        symbol = str(member["symbol"])
+        instrument_id = f"stock:{symbol}"
+        price_rows = _instrument_series_through(connection, instrument_id, as_of_date)
+        price_features = _completed_session_price_features(price_rows, as_of_date)
+        latest_price_row = price_rows[-1] if price_rows and str(price_rows[-1]["session_date"]) == as_of_date else None
+        sector_source_date = member.get("sector_source_date")
+        sector_known = bool(sector_source_date and str(sector_source_date) <= as_of_date)
+        size_known = bool(size_source_date and str(size_source_date) <= as_of_date)
+        sector = member.get("industry") if sector_known else None
+        size_bucket = member.get("size_bucket") if size_known else None
+        fno = _same_contract_fno_feature(connection, symbol, as_of_date)
+        missing = list(price_features.get("missing_features", []))
+        if not sector_known:
+            missing.append("sector_classification_not_known_at_feature_time")
+        if not size_known:
+            missing.append("size_classification_not_known_at_feature_time")
+        if fno.get("fno_eligible") and not fno.get("state"):
+            missing.append(str(fno.get("missing_reason") or "fno_state_unavailable"))
+        row = {
+            "contract_version": OPPORTUNITY_FEATURE_CONTRACT,
+            "session_date": as_of_date,
+            "instrument_id": instrument_id,
+            "symbol": symbol,
+            "membership_status": universe.get("membership_status", "unknown"),
+            "ranking_admissible": bool(universe.get("ranking_admissible")),
+            "membership_role": member.get("membership_role"),
+            "nifty500_member": True,
+            "sector": sector,
+            "sector_source_date": sector_source_date,
+            "size_bucket": size_bucket,
+            "size_source_date": size_source_date,
+            "fno_eligible": bool(fno.get("fno_eligible")),
+            "close": price_features.get("close"),
+            "return_5d_pct": price_features.get("return_5d_pct"),
+            "return_20d_pct": price_features.get("return_20d_pct"),
+            "return_60d_pct": price_features.get("return_60d_pct"),
+            "return_120d_pct": price_features.get("return_120d_pct"),
+            "distance_sma20_pct": price_features.get("distance_sma20_pct"),
+            "distance_sma50_pct": price_features.get("distance_sma50_pct"),
+            "distance_sma200_pct": price_features.get("distance_sma200_pct"),
+            "sma20_slope_5d_pct": price_features.get("sma20_slope_5d_pct"),
+            "sma20_50_spread_pct": price_features.get("sma20_50_spread_pct"),
+            "sma20_50_crossover_age_sessions": price_features.get("sma20_50_crossover_age_sessions"),
+            "realised_volatility_20d_pct": price_features.get("realised_volatility_20d_pct"),
+            "realised_volatility_60d_pct": price_features.get("realised_volatility_60d_pct"),
+            "volatility_expansion_ratio_20v60": price_features.get("volatility_expansion_ratio_20v60"),
+            "range_compression_ratio_20v60": price_features.get("range_compression_ratio_20v60"),
+            "breakout_proximity_20d_pct": price_features.get("breakout_proximity_20d_pct"),
+            "volume_ratio_20d": price_features.get("volume_ratio_20d"),
+            "market_return_20d_pct": market_features.get("return_20d_pct"),
+            "market_return_60d_pct": market_features.get("return_60d_pct"),
+            "market_return_120d_pct": market_features.get("return_120d_pct"),
+            "market_distance_sma200_pct": market_features.get("distance_sma200_pct"),
+            "market_volatility_20d_pct": market_features.get("realised_volatility_20d_pct"),
+            "market_breadth_50dma_pct": None,
+            "market_breadth_200dma_pct": None,
+            "sector_return_20d_pct": None,
+            "sector_return_60d_pct": None,
+            "sector_return_120d_pct": None,
+            "sector_breadth_50dma_pct": None,
+            "sector_rank_20d": None,
+            "stock_sector_rank_20d": None,
+            "stock_universe_rank_20d": None,
+            "fno_state": fno.get("state"),
+            "fno_price_change_pct": fno.get("price_change_pct"),
+            "fno_oi_change_pct": fno.get("oi_change_pct"),
+            "fno_contract_key": fno.get("contract_key"),
+            "source_dates": {
+                "feature_session": as_of_date,
+                "membership_as_of": universe.get("requested_as_of_date"),
+                "membership_anchor": universe.get("anchor_snapshot_date"),
+                "sector_source_date": sector_source_date,
+                "size_source_date": size_source_date,
+                "price_source_session": price_features.get("source_session"),
+                "price_retrieved_at": latest_price_row["retrieved_at"] if latest_price_row else None,
+                "market_source_session": market_features.get("source_session"),
+                "fno_current_session": fno.get("current_session"),
+                "fno_previous_session": fno.get("previous_session"),
+                "fno_retrieved_at": fno.get("retrieved_at"),
+            },
+            "missing_features": missing,
+            "generated_at": generated_at,
+        }
+        rows.append(row)
+
+    ready_rows = [row for row in rows if row.get("close") is not None]
+    breadth50_values = [row for row in ready_rows if row.get("distance_sma50_pct") is not None]
+    breadth200_values = [row for row in ready_rows if row.get("distance_sma200_pct") is not None]
+    breadth50 = (
+        100 * sum(float(row["distance_sma50_pct"]) > 0 for row in breadth50_values) / len(breadth50_values)
+        if breadth50_values else None
+    )
+    breadth200 = (
+        100 * sum(float(row["distance_sma200_pct"]) > 0 for row in breadth200_values) / len(breadth200_values)
+        if breadth200_values else None
+    )
+    for row in rows:
+        row["market_breadth_50dma_pct"] = _round(breadth50, 6)
+        row["market_breadth_200dma_pct"] = _round(breadth200, 6)
+
+    sector_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in ready_rows:
+        if row.get("sector"):
+            sector_groups[str(row["sector"])].append(row)
+    sector_summaries: list[dict[str, Any]] = []
+    for sector, sector_rows in sector_groups.items():
+        summary: dict[str, Any] = {"sector": sector}
+        for lookback in (20, 60, 120):
+            key = f"return_{lookback}d_pct"
+            values = [float(row[key]) for row in sector_rows if row.get(key) is not None]
+            summary[key] = sum(values) / len(values) if values else None
+        breadth_rows = [row for row in sector_rows if row.get("distance_sma50_pct") is not None]
+        summary["breadth_50dma_pct"] = (
+            100 * sum(float(row["distance_sma50_pct"]) > 0 for row in breadth_rows) / len(breadth_rows)
+            if breadth_rows else None
+        )
+        sector_summaries.append(summary)
+        _assign_descending_rank(sector_rows, "return_20d_pct", "stock_sector_rank_20d")
+    _assign_descending_rank(sector_summaries, "return_20d_pct", "sector_rank_20d")
+    sector_by_name = {row["sector"]: row for row in sector_summaries}
+    for row in rows:
+        summary = sector_by_name.get(row.get("sector"))
+        if summary:
+            row["sector_return_20d_pct"] = _round(summary.get("return_20d_pct"), 6)
+            row["sector_return_60d_pct"] = _round(summary.get("return_60d_pct"), 6)
+            row["sector_return_120d_pct"] = _round(summary.get("return_120d_pct"), 6)
+            row["sector_breadth_50dma_pct"] = _round(summary.get("breadth_50dma_pct"), 6)
+            row["sector_rank_20d"] = summary.get("sector_rank_20d")
+        for required_key in (
+            "market_breadth_50dma_pct", "market_breadth_200dma_pct",
+            "sector_return_20d_pct", "sector_breadth_50dma_pct",
+        ):
+            if row.get(required_key) is None:
+                row["missing_features"].append(required_key)
+    _assign_descending_rank(ready_rows, "return_20d_pct", "stock_universe_rank_20d")
+    for row in rows:
+        if row.get("return_20d_pct") is not None and row.get("stock_universe_rank_20d") is None:
+            row["missing_features"].append("stock_universe_rank_20d")
+        row["missing_features"] = sorted(set(row["missing_features"]))
+
+    return {
+        "ok": True,
+        "contract_version": OPPORTUNITY_FEATURE_CONTRACT,
+        "session_date": as_of_date,
+        "rows": rows,
+        "coverage": {
+            "point_in_time_members": len(universe.get("members", [])),
+            "investable_members": len(members),
+            "excluded_non_investable_members": excluded_non_investable,
+            "rows_built": len(rows),
+            "rows_with_completed_session_price": len(ready_rows),
+            "rows_with_sector": sum(bool(row.get("sector")) for row in rows),
+            "rows_with_fno_observation": sum(bool(row.get("fno_eligible")) for row in rows),
+            "market_breadth_50dma_denominator": len(breadth50_values),
+            "market_breadth_200dma_denominator": len(breadth200_values),
+            "sectors_evaluated": len(sector_summaries),
+            "universe_ranking_admissible": bool(universe.get("ranking_admissible")),
+        },
+        "no_look_ahead": {
+            "candle_query_boundary": f"session_date <= {as_of_date}",
+            "classification_source_boundary": f"source_date <= {as_of_date}",
+            "fno_comparison": "same_contract_current_and_prior_completed_session_only",
+            "forward_label_fields_present": False,
+        },
+    }
+
+
+_OPPORTUNITY_LEDGER_COLUMNS = (
+    "contract_version", "session_date", "instrument_id", "symbol",
+    "membership_status", "ranking_admissible", "membership_role", "nifty500_member",
+    "sector", "sector_source_date", "size_bucket", "size_source_date", "fno_eligible",
+    "close", "return_5d_pct", "return_20d_pct", "return_60d_pct", "return_120d_pct",
+    "distance_sma20_pct", "distance_sma50_pct", "distance_sma200_pct", "sma20_slope_5d_pct",
+    "sma20_50_spread_pct", "sma20_50_crossover_age_sessions", "realised_volatility_20d_pct",
+    "realised_volatility_60d_pct", "volatility_expansion_ratio_20v60",
+    "range_compression_ratio_20v60", "breakout_proximity_20d_pct", "volume_ratio_20d",
+    "market_return_20d_pct",
+    "market_return_60d_pct", "market_return_120d_pct",
+    "market_distance_sma200_pct", "market_volatility_20d_pct", "market_breadth_50dma_pct",
+    "market_breadth_200dma_pct", "sector_return_20d_pct", "sector_return_60d_pct",
+    "sector_return_120d_pct", "sector_breadth_50dma_pct", "sector_rank_20d",
+    "stock_sector_rank_20d", "stock_universe_rank_20d", "fno_state",
+    "fno_price_change_pct", "fno_oi_change_pct", "fno_contract_key",
+    "source_dates_json", "missing_features_json", "generated_at", "schema_version",
+)
+
+
+def _persist_opportunity_feature_rows(
+    connection: sqlite3.Connection, rows: list[dict[str, Any]],
+) -> int:
+    placeholders = ",".join("?" for _ in _OPPORTUNITY_LEDGER_COLUMNS)
+    columns = ",".join(_OPPORTUNITY_LEDGER_COLUMNS)
+    values = []
+    for row in rows:
+        serialised = dict(row)
+        serialised["ranking_admissible"] = int(bool(row.get("ranking_admissible")))
+        serialised["nifty500_member"] = int(bool(row.get("nifty500_member")))
+        serialised["fno_eligible"] = int(bool(row.get("fno_eligible")))
+        serialised["source_dates_json"] = json.dumps(row.get("source_dates", {}), sort_keys=True)
+        serialised["missing_features_json"] = json.dumps(row.get("missing_features", []), sort_keys=True)
+        serialised["schema_version"] = 1
+        values.append(tuple(serialised.get(column) for column in _OPPORTUNITY_LEDGER_COLUMNS))
+    if values:
+        connection.executemany(
+            f"INSERT OR REPLACE INTO opportunity_feature_ledger({columns}) VALUES ({placeholders})",
+            values,
+        )
+    return len(values)
+
+
+def build_opportunity_feature_ledger(
+    market_db: Path = DEFAULT_MARKET_DB,
+    snapshot_db: Path = DEFAULT_SNAPSHOT_DB,
+    as_of_date: str | None = None,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        completed_session = as_of_date or connection.execute(
+            "SELECT MAX(session_date) FROM candles WHERE instrument_id='index:Nifty 50'"
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    if not completed_session:
+        return {"ok": False, "reason": "completed_reference_session_unavailable"}
+    universe = point_in_time_universe_contract(market_db, snapshot_db, str(completed_session))
+    connection = _connect(market_db)
+    try:
+        contract = _build_opportunity_feature_rows(connection, str(completed_session), universe)
+        if not contract.get("ok"):
+            return contract
+        persisted = _persist_opportunity_feature_rows(connection, contract["rows"])
+        connection.commit()
+        return {
+            "ok": True,
+            "contract_version": OPPORTUNITY_FEATURE_CONTRACT,
+            "session_date": str(completed_session),
+            "persisted_rows": persisted,
+            "coverage": contract["coverage"],
+            "no_look_ahead": contract["no_look_ahead"],
+            "sample": contract["rows"][:5],
+        }
+    finally:
+        connection.close()
+
+
+def opportunity_feature_ledger(
+    market_db: Path = DEFAULT_MARKET_DB,
+    as_of_date: str | None = None,
+    symbol: str | None = None,
+    limit: int = 100,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    if limit < 1 or limit > 1000:
+        raise ValueError("invalid_feature_ledger_limit")
+    connection = _connect(market_db)
+    try:
+        session = as_of_date or connection.execute(
+            "SELECT MAX(session_date) FROM opportunity_feature_ledger WHERE contract_version=?",
+            (OPPORTUNITY_FEATURE_CONTRACT,),
+        ).fetchone()[0]
+        if not session:
+            return {"ok": False, "reason": "feature_ledger_empty"}
+        filters = ["contract_version=?", "session_date=?"]
+        parameters: list[Any] = [OPPORTUNITY_FEATURE_CONTRACT, session]
+        if symbol:
+            filters.append("symbol=?")
+            parameters.append(str(symbol).strip().upper())
+        total = connection.execute(
+            f"SELECT COUNT(*) FROM opportunity_feature_ledger WHERE {' AND '.join(filters)}",
+            parameters,
+        ).fetchone()[0]
+        stored_rows = connection.execute(
+            f"""SELECT * FROM opportunity_feature_ledger
+                WHERE {' AND '.join(filters)}
+                ORDER BY sector_rank_20d,stock_sector_rank_20d,symbol LIMIT ?""",
+            (*parameters, limit),
+        ).fetchall()
+        rows = []
+        for stored in stored_rows:
+            row = dict(stored)
+            row["ranking_admissible"] = bool(row["ranking_admissible"])
+            row["nifty500_member"] = bool(row["nifty500_member"])
+            row["fno_eligible"] = bool(row["fno_eligible"])
+            row["source_dates"] = json.loads(row.pop("source_dates_json"))
+            row["missing_features"] = json.loads(row.pop("missing_features_json"))
+            rows.append(row)
+        return {
+            "ok": True,
+            "contract_version": OPPORTUNITY_FEATURE_CONTRACT,
+            "session_date": session,
+            "total_rows": int(total),
+            "returned_rows": len(rows),
+            "rows": rows,
+            "limitations": [
+                "The ledger contains completed-session features only; forward outcomes are stored separately.",
+                "Missing features remain null and carry an explicit reason.",
+                "Rows are research evidence and are not forecasts or order instructions.",
+            ],
+        }
+    finally:
+        connection.close()
+
+
+MARKET_REGIME_CONTRACT = "market-regime-classification-v1"
+MARKET_REGIME_MINIMUM_COVERAGE_RATIO = 0.95
+
+
+def market_regime_classification(
+    feature_rows: list[Any], session_date: str | None = None,
+) -> dict[str, Any]:
+    rows = [dict(row) for row in feature_rows]
+    sessions = sorted({str(row.get("session_date") or "") for row in rows if row.get("session_date")})
+    if session_date:
+        try:
+            date.fromisoformat(session_date)
+        except ValueError as error:
+            raise ValueError("invalid_market_regime_session_date") from error
+    if len(sessions) > 1 or (session_date and sessions and sessions[0] != session_date):
+        raise ValueError("market_regime_requires_single_feature_session")
+    resolved_session = session_date or (sessions[0] if sessions else None)
+    if not rows or not resolved_session:
+        return {"ok": False, "reason": "feature_ledger_session_unavailable"}
+
+    input_keys = (
+        "market_return_20d_pct", "market_distance_sma200_pct",
+        "market_volatility_20d_pct", "market_breadth_50dma_pct",
+        "market_breadth_200dma_pct",
+    )
+    inputs: dict[str, float | None] = {}
+    missing_inputs: list[str] = []
+    inconsistent_inputs: list[str] = []
+    for key in input_keys:
+        values = sorted({round(float(row[key]), 8) for row in rows if row.get(key) is not None})
+        if not values:
+            inputs[key] = None
+            missing_inputs.append(key)
+        elif len(values) > 1:
+            inputs[key] = None
+            inconsistent_inputs.append(key)
+        else:
+            inputs[key] = values[0]
+
+    universe_rows = len(rows)
+    priced_rows = sum(row.get("close") is not None for row in rows)
+    breadth50_denominator = sum(row.get("distance_sma50_pct") is not None for row in rows)
+    breadth200_denominator = sum(row.get("distance_sma200_pct") is not None for row in rows)
+    priced_coverage = priced_rows / universe_rows if universe_rows else 0.0
+    breadth50_coverage = breadth50_denominator / universe_rows if universe_rows else 0.0
+    breadth200_coverage = breadth200_denominator / universe_rows if universe_rows else 0.0
+    coverage_failures = []
+    if priced_coverage < MARKET_REGIME_MINIMUM_COVERAGE_RATIO:
+        coverage_failures.append("priced_coverage_below_95_pct")
+    if breadth50_coverage < MARKET_REGIME_MINIMUM_COVERAGE_RATIO:
+        coverage_failures.append("breadth_50dma_coverage_below_95_pct")
+    if breadth200_coverage < MARKET_REGIME_MINIMUM_COVERAGE_RATIO:
+        coverage_failures.append("breadth_200dma_coverage_below_95_pct")
+    missing_inputs.extend(f"inconsistent_{key}" for key in inconsistent_inputs)
+    missing_inputs.extend(coverage_failures)
+    universe_admissible = all(bool(row.get("ranking_admissible")) for row in rows)
+
+    trend_direction = None
+    trend_strength = None
+    range_state = None
+    volatility_state = None
+    breadth_state = None
+    regime_family = None
+    regime_key = None
+    if not missing_inputs:
+        return20 = float(inputs["market_return_20d_pct"])
+        distance200 = float(inputs["market_distance_sma200_pct"])
+        volatility20 = float(inputs["market_volatility_20d_pct"])
+        breadth50 = float(inputs["market_breadth_50dma_pct"])
+        breadth200 = float(inputs["market_breadth_200dma_pct"])
+
+        if distance200 >= 3 and return20 >= 2 and breadth50 >= 60 and breadth200 >= 55:
+            trend_direction, trend_strength = "up", "strong"
+        elif distance200 > 0 and return20 > 0:
+            trend_direction = "up"
+            trend_strength = "moderate" if breadth50 >= 50 else "weak"
+        elif distance200 <= -3 and return20 <= -2 and breadth50 <= 40 and breadth200 <= 45:
+            trend_direction, trend_strength = "down", "strong"
+        elif distance200 < 0 and return20 < 0:
+            trend_direction = "down"
+            trend_strength = "moderate" if breadth50 < 50 else "weak"
+        else:
+            trend_direction, trend_strength = "neutral", "conflicted"
+
+        if abs(distance200) <= 2 and abs(return20) <= 3 and 40 <= breadth50 <= 60:
+            range_state = "range_bound"
+        elif trend_strength == "strong":
+            range_state = "trend_expansion"
+        else:
+            range_state = "transition"
+
+        if volatility20 < 12:
+            volatility_state = "low"
+        elif volatility20 < 20:
+            volatility_state = "normal"
+        elif volatility20 < 30:
+            volatility_state = "elevated"
+        else:
+            volatility_state = "high"
+
+        if breadth50 >= 60 and breadth200 >= 55:
+            breadth_state = "broad_positive"
+        elif breadth50 <= 40 and breadth200 <= 45:
+            breadth_state = "broad_negative"
+        elif breadth50 >= 50 and breadth200 >= 45:
+            breadth_state = "positive"
+        elif breadth50 < 50 and breadth200 < 55:
+            breadth_state = "negative"
+        else:
+            breadth_state = "mixed"
+
+        if range_state == "range_bound":
+            regime_family = "range"
+        elif trend_direction == "up":
+            regime_family = "bullish_trend"
+        elif trend_direction == "down":
+            regime_family = "bearish_trend"
+        else:
+            regime_family = "transition"
+        regime_key = "/".join((
+            regime_family, trend_strength, range_state, volatility_state, breadth_state,
+        ))
+
+    source_dates = {}
+    for row in rows:
+        raw = row.get("source_dates")
+        if raw is None and row.get("source_dates_json"):
+            try:
+                raw = json.loads(row["source_dates_json"])
+            except (TypeError, json.JSONDecodeError):
+                raw = None
+        if raw:
+            source_dates = dict(raw)
+            break
+    classification_status = (
+        "gated" if missing_inputs else "ready" if universe_admissible else "descriptive_only"
+    )
+    generated_at = datetime.now(timezone.utc).isoformat()
+    return {
+        "ok": True,
+        "contract_version": MARKET_REGIME_CONTRACT,
+        "session_date": resolved_session,
+        "classification_status": classification_status,
+        "ranking_admissible": bool(not missing_inputs and universe_admissible),
+        "regime_family": regime_family,
+        "trend_direction": trend_direction,
+        "trend_strength": trend_strength,
+        "range_state": range_state,
+        "volatility_state": volatility_state,
+        "breadth_state": breadth_state,
+        "regime_key": regime_key,
+        **inputs,
+        "universe_rows": universe_rows,
+        "priced_rows": priced_rows,
+        "breadth_50dma_denominator": breadth50_denominator,
+        "breadth_200dma_denominator": breadth200_denominator,
+        "priced_coverage_ratio": _round(priced_coverage, 6),
+        "breadth_50dma_coverage_ratio": _round(breadth50_coverage, 6),
+        "breadth_200dma_coverage_ratio": _round(breadth200_coverage, 6),
+        "source_dates": source_dates,
+        "missing_inputs": sorted(set(missing_inputs)),
+        "generated_at": generated_at,
+        "definitions": {
+            "trend": {
+                "strong_up": "distance_vs_200dma >= 3%, 20-session return >= 2%, breadth50 >= 60%, breadth200 >= 55%",
+                "moderate_up": "distance_vs_200dma > 0, 20-session return > 0, breadth50 >= 50%",
+                "strong_down": "distance_vs_200dma <= -3%, 20-session return <= -2%, breadth50 <= 40%, breadth200 <= 45%",
+                "moderate_down": "distance_vs_200dma < 0, 20-session return < 0, breadth50 < 50%",
+            },
+            "range_bound": "absolute 200dma distance <= 2%, absolute 20-session return <= 3%, breadth50 between 40% and 60%",
+            "volatility": "annualised 20-session realised volatility: low <12%, normal <20%, elevated <30%, high >=30%",
+            "breadth": "frozen 50dma/200dma participation thresholds",
+            "minimum_cross_sectional_coverage": MARKET_REGIME_MINIMUM_COVERAGE_RATIO,
+            "strategy_results_used": False,
+            "forward_labels_used": False,
+        },
+    }
+
+
+def _market_regime_sample_summary(
+    regimes: list[dict[str, Any]], trade_sessions: list[str] | None = None,
+) -> dict[str, Any]:
+    trade_counts = defaultdict(int)
+    if trade_sessions is not None:
+        for session in trade_sessions:
+            trade_counts[str(session)] += 1
+    family_counts: dict[str, dict[str, Any]] = {}
+    dimension_counts: dict[str, dict[str, int]] = {
+        "trend_direction": defaultdict(int),
+        "trend_strength": defaultdict(int),
+        "range_state": defaultdict(int),
+        "volatility_state": defaultdict(int),
+        "breadth_state": defaultdict(int),
+    }
+    for row in regimes:
+        family = str(row.get("regime_family") or "gated")
+        aggregate = family_counts.setdefault(family, {"sessions": 0, "trades": 0})
+        aggregate["sessions"] += 1
+        aggregate["trades"] += trade_counts.get(str(row.get("session_date")), 0)
+        for dimension in dimension_counts:
+            dimension_counts[dimension][str(row.get(dimension) or "gated")] += 1
+    if trade_sessions is None:
+        for aggregate in family_counts.values():
+            aggregate["trades"] = None
+    return {
+        "contract_version": "market-regime-sample-summary-v1",
+        "sessions": len(regimes),
+        "trade_sample_status": "available" if trade_sessions is not None else "not_joined_until_strategy_conditioning",
+        "by_regime_family": family_counts,
+        "by_dimension": {key: dict(value) for key, value in dimension_counts.items()},
+    }
+
+
+def _persist_market_regime(connection: sqlite3.Connection, row: dict[str, Any]) -> None:
+    connection.execute(
+        """INSERT OR REPLACE INTO market_regime_ledger(
+               contract_version,session_date,classification_status,ranking_admissible,
+               regime_family,trend_direction,trend_strength,range_state,volatility_state,
+               breadth_state,regime_key,market_return_20d_pct,market_distance_sma200_pct,
+               market_volatility_20d_pct,market_breadth_50dma_pct,market_breadth_200dma_pct,
+               universe_rows,priced_rows,breadth_50dma_denominator,breadth_200dma_denominator,
+               priced_coverage_ratio,breadth_50dma_coverage_ratio,breadth_200dma_coverage_ratio,
+               source_dates_json,missing_inputs_json,generated_at,schema_version)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+        (
+            row["contract_version"], row["session_date"], row["classification_status"],
+            int(bool(row["ranking_admissible"])), row["regime_family"], row["trend_direction"],
+            row["trend_strength"], row["range_state"], row["volatility_state"],
+            row["breadth_state"], row["regime_key"], row["market_return_20d_pct"],
+            row["market_distance_sma200_pct"], row["market_volatility_20d_pct"],
+            row["market_breadth_50dma_pct"], row["market_breadth_200dma_pct"],
+            row["universe_rows"], row["priced_rows"], row["breadth_50dma_denominator"],
+            row["breadth_200dma_denominator"], row["priced_coverage_ratio"],
+            row["breadth_50dma_coverage_ratio"], row["breadth_200dma_coverage_ratio"],
+            json.dumps(row["source_dates"], sort_keys=True),
+            json.dumps(row["missing_inputs"], sort_keys=True), row["generated_at"],
+        ),
+    )
+
+
+def build_market_regime_ledger(
+    market_db: Path = DEFAULT_MARKET_DB, as_of_date: str | None = None,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        session = as_of_date or connection.execute(
+            "SELECT MAX(session_date) FROM opportunity_feature_ledger WHERE contract_version=?",
+            (OPPORTUNITY_FEATURE_CONTRACT,),
+        ).fetchone()[0]
+        if not session:
+            return {"ok": False, "reason": "feature_ledger_empty"}
+        feature_rows = connection.execute(
+            """SELECT * FROM opportunity_feature_ledger
+               WHERE contract_version=? AND session_date=? ORDER BY symbol""",
+            (OPPORTUNITY_FEATURE_CONTRACT, session),
+        ).fetchall()
+        result = market_regime_classification(feature_rows, str(session))
+        if result.get("ok"):
+            _persist_market_regime(connection, result)
+            connection.commit()
+        return result
+    finally:
+        connection.close()
+
+
+def market_regime_history(
+    market_db: Path = DEFAULT_MARKET_DB,
+    from_date: str | None = None,
+    through_date: str | None = None,
+    limit: int = 500,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    if limit < 1 or limit > 2000:
+        raise ValueError("invalid_market_regime_limit")
+    if from_date:
+        date.fromisoformat(from_date)
+    if through_date:
+        date.fromisoformat(through_date)
+    if from_date and through_date and from_date > through_date:
+        raise ValueError("invalid_market_regime_window")
+    connection = _connect(market_db)
+    try:
+        filters = ["contract_version=?"]
+        parameters: list[Any] = [MARKET_REGIME_CONTRACT]
+        if from_date:
+            filters.append("session_date>=?")
+            parameters.append(from_date)
+        if through_date:
+            filters.append("session_date<=?")
+            parameters.append(through_date)
+        stored = connection.execute(
+            f"""SELECT * FROM market_regime_ledger WHERE {' AND '.join(filters)}
+                ORDER BY session_date DESC LIMIT ?""",
+            (*parameters, limit),
+        ).fetchall()
+        rows = []
+        for stored_row in reversed(stored):
+            row = dict(stored_row)
+            row["ranking_admissible"] = bool(row["ranking_admissible"])
+            row["source_dates"] = json.loads(row.pop("source_dates_json"))
+            row["missing_inputs"] = json.loads(row.pop("missing_inputs_json"))
+            rows.append(row)
+        return {
+            "ok": bool(rows),
+            "reason": None if rows else "market_regime_ledger_empty",
+            "contract_version": MARKET_REGIME_CONTRACT,
+            "rows": rows,
+            "sample_summary": _market_regime_sample_summary(rows),
+            "decision_boundary": "Strategy and forward-outcome fields are excluded from classification; trade samples are joined only during later conditioning.",
+        }
+    finally:
+        connection.close()
+
+
+def backfill_market_regime_research(
+    market_db: Path = DEFAULT_MARKET_DB,
+    snapshot_db: Path = DEFAULT_SNAPSHOT_DB,
+    from_date: str | None = None,
+    through_date: str | None = None,
+    max_sessions: int = 20,
+) -> dict[str, Any]:
+    if not from_date or not through_date:
+        raise ValueError("market_regime_backfill_window_required")
+    date.fromisoformat(from_date)
+    date.fromisoformat(through_date)
+    if from_date > through_date:
+        raise ValueError("invalid_market_regime_backfill_window")
+    if max_sessions < 1 or max_sessions > 252:
+        raise ValueError("invalid_market_regime_backfill_limit")
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        sessions = [str(row[0]) for row in connection.execute(
+            """SELECT session_date FROM candles
+               WHERE instrument_id='index:Nifty 50' AND session_date BETWEEN ? AND ?
+               ORDER BY session_date""",
+            (from_date, through_date),
+        )]
+    finally:
+        connection.close()
+    if len(sessions) > max_sessions:
+        raise ValueError("market_regime_backfill_session_limit_exceeded")
+    completed = []
+    failures = []
+    for session in sessions:
+        features = build_opportunity_feature_ledger(market_db, snapshot_db, session)
+        if not features.get("ok"):
+            failures.append({"session_date": session, "stage": "feature_ledger", "reason": features.get("reason")})
+            continue
+        regime = build_market_regime_ledger(market_db, session)
+        if not regime.get("ok"):
+            failures.append({"session_date": session, "stage": "market_regime", "reason": regime.get("reason")})
+            continue
+        completed.append({
+            "session_date": session,
+            "feature_rows": features.get("persisted_rows"),
+            "classification_status": regime.get("classification_status"),
+            "regime_family": regime.get("regime_family"),
+        })
+    return {
+        "ok": not failures and bool(completed),
+        "contract_version": "market-regime-research-backfill-v1",
+        "requested_from": from_date,
+        "requested_through": through_date,
+        "requested_sessions": len(sessions),
+        "completed_sessions": len(completed),
+        "failed_sessions": len(failures),
+        "completed": completed,
+        "failures": failures,
+        "execution_boundary": "bounded maintenance operation; not invoked by ordinary page reads",
+    }
+
+
+SECTOR_TREND_CONTRACT = "sector-trend-classification-v1"
+SECTOR_TREND_MINIMUM_COVERAGE_RATIO = 0.80
+SECTOR_TREND_PERSISTENCE_SESSIONS = 5
+SECTOR_TREND_VOLATILITY_BASELINE_SESSIONS = 10
+
+
+def _mean_present(rows: list[dict[str, Any]], key: str) -> tuple[float | None, int]:
+    values = [float(row[key]) for row in rows if row.get(key) is not None]
+    return (sum(values) / len(values), len(values)) if values else (None, 0)
+
+
+def sector_trend_classification(
+    feature_rows: list[Any], historical_sector_rows: list[Any] | None = None,
+    session_date: str | None = None,
+) -> dict[str, Any]:
+    rows = [dict(row) for row in feature_rows]
+    sessions = sorted({str(row.get("session_date") or "") for row in rows if row.get("session_date")})
+    if session_date:
+        date.fromisoformat(session_date)
+    if len(sessions) > 1 or (session_date and sessions and sessions[0] != session_date):
+        raise ValueError("sector_trend_requires_single_feature_session")
+    resolved_session = session_date or (sessions[0] if sessions else None)
+    if not rows or not resolved_session:
+        return {"ok": False, "reason": "feature_ledger_session_unavailable"}
+
+    history_by_sector: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for historical in historical_sector_rows or []:
+        item = dict(historical)
+        if item.get("sector") and str(item.get("session_date") or "") < resolved_session:
+            history_by_sector[str(item["sector"])].append(item)
+    for sector_history in history_by_sector.values():
+        sector_history.sort(key=lambda item: str(item.get("session_date") or ""))
+
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if row.get("sector"):
+            grouped[str(row["sector"])].append(row)
+    generated_at = datetime.now(timezone.utc).isoformat()
+    summaries: list[dict[str, Any]] = []
+    for sector, members in sorted(grouped.items()):
+        member_count = len(members)
+        priced_count = sum(row.get("close") is not None for row in members)
+        summary: dict[str, Any] = {
+            "contract_version": SECTOR_TREND_CONTRACT,
+            "session_date": resolved_session,
+            "sector": sector,
+            "member_count": member_count,
+            "priced_count": priced_count,
+            "constituent_coverage_ratio": priced_count / member_count if member_count else 0.0,
+            "ranking_admissible": False,
+            "sector_state": None,
+            "generated_at": generated_at,
+        }
+        missing: list[str] = []
+        for lookback in (20, 60, 120):
+            value, count = _mean_present(members, f"return_{lookback}d_pct")
+            coverage = count / member_count if member_count else 0.0
+            summary[f"sector_return_{lookback}d_pct"] = _round(value, 6)
+            summary[f"return_{lookback}d_coverage_ratio"] = _round(coverage, 6)
+            market_values = {
+                round(float(row[f"market_return_{lookback}d_pct"]), 8)
+                for row in members if row.get(f"market_return_{lookback}d_pct") is not None
+            }
+            market_value = next(iter(market_values)) if len(market_values) == 1 else None
+            summary[f"market_return_{lookback}d_pct"] = market_value
+            summary[f"relative_strength_{lookback}d_pct"] = (
+                _round(value - market_value, 6) if value is not None and market_value is not None else None
+            )
+            if coverage < SECTOR_TREND_MINIMUM_COVERAGE_RATIO:
+                missing.append(f"return_{lookback}d_coverage_below_80_pct")
+            if market_value is None:
+                missing.append(f"market_return_{lookback}d_pct")
+
+        breadth_rows = [row for row in members if row.get("distance_sma50_pct") is not None]
+        alignment_rows = [
+            row for row in members
+            if all(row.get(key) is not None for key in (
+                "distance_sma20_pct", "distance_sma50_pct", "distance_sma200_pct",
+            ))
+        ]
+        slope, slope_count = _mean_present(members, "sma20_slope_5d_pct")
+        volatility, volatility_count = _mean_present(members, "realised_volatility_20d_pct")
+        summary["breadth_50dma_pct"] = _round(
+            100 * sum(float(row["distance_sma50_pct"]) > 0 for row in breadth_rows) / len(breadth_rows), 6
+        ) if breadth_rows else None
+        summary["ma_alignment_pct"] = _round(
+            100 * sum(
+                float(row["distance_sma20_pct"]) > 0
+                and float(row["distance_sma50_pct"]) > 0
+                and float(row["distance_sma200_pct"]) > 0
+                for row in alignment_rows
+            ) / len(alignment_rows), 6
+        ) if alignment_rows else None
+        summary["average_sma20_slope_5d_pct"] = _round(slope, 6)
+        summary["realised_volatility_20d_pct"] = _round(volatility, 6)
+        for name, count in (
+            ("breadth_50dma", len(breadth_rows)), ("ma_alignment", len(alignment_rows)),
+            ("sma20_slope", slope_count), ("realised_volatility_20d", volatility_count),
+        ):
+            if not member_count or count / member_count < SECTOR_TREND_MINIMUM_COVERAGE_RATIO:
+                missing.append(f"{name}_coverage_below_80_pct")
+        if summary["constituent_coverage_ratio"] < SECTOR_TREND_MINIMUM_COVERAGE_RATIO:
+            missing.append("constituent_coverage_below_80_pct")
+        summary["missing_inputs"] = missing
+        summary["source_dates"] = {
+            "feature_session": resolved_session,
+            "sector_source_dates": sorted({
+                str(row["sector_source_date"]) for row in members if row.get("sector_source_date")
+            }),
+        }
+        summaries.append(summary)
+
+    for lookback in (20, 60, 120):
+        _assign_descending_rank(
+            summaries, f"relative_strength_{lookback}d_pct", f"rank_{lookback}d"
+        )
+    sector_count = len(summaries)
+    top_rank_cutoff = max(1, math.ceil(sector_count * 0.30))
+    for summary in summaries:
+        history = history_by_sector.get(summary["sector"], [])
+        previous_five = history[-SECTOR_TREND_PERSISTENCE_SESSIONS:]
+        previous_ten = history[-SECTOR_TREND_VOLATILITY_BASELINE_SESSIONS:]
+        if len(previous_five) < SECTOR_TREND_PERSISTENCE_SESSIONS:
+            summary["missing_inputs"].append("five_session_sector_history")
+            summary["persistence_ratio"] = None
+            summary["acceleration_5_sessions_pct"] = None
+        else:
+            persistence_window = previous_five[-4:] + [summary]
+            persistent = sum(
+                float(row.get("relative_strength_20d_pct") or 0) > 0
+                and int(row.get("rank_20d") or sector_count + 1) <= math.ceil(sector_count / 2)
+                for row in persistence_window
+            )
+            summary["persistence_ratio"] = _round(persistent / len(persistence_window), 6)
+            baseline = previous_five[0].get("relative_strength_20d_pct")
+            current = summary.get("relative_strength_20d_pct")
+            summary["acceleration_5_sessions_pct"] = (
+                _round(float(current) - float(baseline), 6)
+                if current is not None and baseline is not None else None
+            )
+            if summary["acceleration_5_sessions_pct"] is None:
+                summary["missing_inputs"].append("acceleration_5_sessions_pct")
+        prior_volatility = [
+            float(row["realised_volatility_20d_pct"])
+            for row in previous_ten if row.get("realised_volatility_20d_pct") is not None
+        ]
+        if len(previous_ten) < SECTOR_TREND_VOLATILITY_BASELINE_SESSIONS or len(prior_volatility) < 8:
+            summary["volatility_expansion_ratio"] = None
+            summary["missing_inputs"].append("ten_session_volatility_history")
+        else:
+            baseline_volatility = median(prior_volatility)
+            current_volatility = summary.get("realised_volatility_20d_pct")
+            summary["volatility_expansion_ratio"] = (
+                _round(float(current_volatility) / baseline_volatility, 6)
+                if current_volatility is not None and baseline_volatility > 0 else None
+            )
+        summary["missing_inputs"] = sorted(set(summary["missing_inputs"]))
+        universe_admissible = all(bool(row.get("ranking_admissible")) for row in grouped[summary["sector"]])
+        if summary["missing_inputs"]:
+            summary["classification_status"] = "gated"
+        else:
+            summary["classification_status"] = "ready" if universe_admissible else "descriptive_only"
+            rel20 = float(summary["relative_strength_20d_pct"])
+            rel60 = float(summary["relative_strength_60d_pct"])
+            rel120 = float(summary["relative_strength_120d_pct"])
+            breadth = float(summary["breadth_50dma_pct"])
+            alignment = float(summary["ma_alignment_pct"])
+            acceleration = float(summary["acceleration_5_sessions_pct"])
+            persistence = float(summary["persistence_ratio"])
+            if all(value > 0 for value in (rel20, rel60, rel120)) and int(summary["rank_20d"]) <= top_rank_cutoff and breadth >= 60 and alignment >= 50 and persistence >= 0.60:
+                summary["sector_state"] = "leading"
+            elif rel20 > 0 and acceleration > 0 and breadth >= 50:
+                summary["sector_state"] = "improving"
+            elif all(value < 0 for value in (rel20, rel60, rel120)) and breadth <= 40:
+                summary["sector_state"] = "lagging"
+            elif (rel20 < 0 or acceleration < 0) and breadth < 50:
+                summary["sector_state"] = "weakening"
+            else:
+                summary["sector_state"] = "neutral"
+        summary["ranking_admissible"] = bool(
+            summary["classification_status"] == "ready" and universe_admissible
+        )
+        for ratio_key in (
+            "constituent_coverage_ratio", "return_20d_coverage_ratio",
+            "return_60d_coverage_ratio", "return_120d_coverage_ratio",
+        ):
+            summary[ratio_key] = _round(summary[ratio_key], 6)
+
+    return {
+        "ok": True,
+        "contract_version": SECTOR_TREND_CONTRACT,
+        "session_date": resolved_session,
+        "rows": summaries,
+        "coverage": {
+            "feature_rows": len(rows),
+            "classified_sector_rows": sum(row["sector_state"] is not None for row in summaries),
+            "sectors": len(summaries),
+        },
+        "definitions": {
+            "minimum_constituent_coverage": SECTOR_TREND_MINIMUM_COVERAGE_RATIO,
+            "persistence_sessions": SECTOR_TREND_PERSISTENCE_SESSIONS,
+            "volatility_baseline_sessions": SECTOR_TREND_VOLATILITY_BASELINE_SESSIONS,
+            "forward_labels_used": False,
+            "strategy_results_used": False,
+        },
+    }
+
+
+_SECTOR_TREND_COLUMNS = (
+    "contract_version", "session_date", "sector", "classification_status",
+    "ranking_admissible", "sector_state", "member_count", "priced_count",
+    "constituent_coverage_ratio", "return_20d_coverage_ratio", "return_60d_coverage_ratio",
+    "return_120d_coverage_ratio", "sector_return_20d_pct", "sector_return_60d_pct",
+    "sector_return_120d_pct", "market_return_20d_pct", "market_return_60d_pct",
+    "market_return_120d_pct", "relative_strength_20d_pct", "relative_strength_60d_pct",
+    "relative_strength_120d_pct", "rank_20d", "rank_60d", "rank_120d",
+    "breadth_50dma_pct", "ma_alignment_pct", "average_sma20_slope_5d_pct",
+    "realised_volatility_20d_pct", "persistence_ratio", "acceleration_5_sessions_pct",
+    "volatility_expansion_ratio", "source_dates_json", "missing_inputs_json",
+    "generated_at", "schema_version",
+)
+
+
+def _persist_sector_trends(connection: sqlite3.Connection, rows: list[dict[str, Any]]) -> int:
+    placeholders = ",".join("?" for _ in _SECTOR_TREND_COLUMNS)
+    values = []
+    for row in rows:
+        stored = dict(row)
+        stored["ranking_admissible"] = int(bool(row.get("ranking_admissible")))
+        stored["source_dates_json"] = json.dumps(row.get("source_dates", {}), sort_keys=True)
+        stored["missing_inputs_json"] = json.dumps(row.get("missing_inputs", []), sort_keys=True)
+        stored["schema_version"] = 1
+        values.append(tuple(stored.get(column) for column in _SECTOR_TREND_COLUMNS))
+    if values:
+        connection.executemany(
+            f"INSERT OR REPLACE INTO sector_trend_ledger({','.join(_SECTOR_TREND_COLUMNS)}) VALUES ({placeholders})",
+            values,
+        )
+    return len(values)
+
+
+def build_sector_trend_ledger(
+    market_db: Path = DEFAULT_MARKET_DB, as_of_date: str | None = None,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        session = as_of_date or connection.execute(
+            "SELECT MAX(session_date) FROM opportunity_feature_ledger WHERE contract_version=?",
+            (OPPORTUNITY_FEATURE_CONTRACT,),
+        ).fetchone()[0]
+        if not session:
+            return {"ok": False, "reason": "feature_ledger_empty"}
+        feature_rows = connection.execute(
+            "SELECT * FROM opportunity_feature_ledger WHERE contract_version=? AND session_date=? ORDER BY sector,symbol",
+            (OPPORTUNITY_FEATURE_CONTRACT, session),
+        ).fetchall()
+        historical = connection.execute(
+            "SELECT * FROM sector_trend_ledger WHERE contract_version=? AND session_date<? ORDER BY session_date",
+            (SECTOR_TREND_CONTRACT, session),
+        ).fetchall()
+        result = sector_trend_classification(feature_rows, historical, str(session))
+        if result.get("ok"):
+            result["persisted_rows"] = _persist_sector_trends(connection, result["rows"])
+            connection.commit()
+        return result
+    finally:
+        connection.close()
+
+
+def sector_trend_history(
+    market_db: Path = DEFAULT_MARKET_DB, from_date: str | None = None,
+    through_date: str | None = None, sector: str | None = None, limit: int = 500,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    if limit < 1 or limit > 2000:
+        raise ValueError("invalid_sector_trend_limit")
+    if from_date:
+        date.fromisoformat(from_date)
+    if through_date:
+        date.fromisoformat(through_date)
+    if from_date and through_date and from_date > through_date:
+        raise ValueError("invalid_sector_trend_window")
+    connection = _connect(market_db)
+    try:
+        filters = ["contract_version=?"]
+        parameters: list[Any] = [SECTOR_TREND_CONTRACT]
+        for value, expression in ((from_date, "session_date>=?"), (through_date, "session_date<=?")):
+            if value:
+                filters.append(expression)
+                parameters.append(value)
+        if sector:
+            filters.append("sector=?")
+            parameters.append(sector)
+        stored = connection.execute(
+            f"SELECT * FROM sector_trend_ledger WHERE {' AND '.join(filters)} ORDER BY session_date DESC,rank_20d,sector LIMIT ?",
+            (*parameters, limit),
+        ).fetchall()
+        rows = []
+        for stored_row in stored:
+            row = dict(stored_row)
+            row["ranking_admissible"] = bool(row["ranking_admissible"])
+            row["source_dates"] = json.loads(row.pop("source_dates_json"))
+            row["missing_inputs"] = json.loads(row.pop("missing_inputs_json"))
+            rows.append(row)
+        return {
+            "ok": bool(rows),
+            "reason": None if rows else "sector_trend_ledger_empty",
+            "contract_version": SECTOR_TREND_CONTRACT,
+            "rows": rows,
+            "decision_boundary": "Dated constituent features only; forward outcomes and strategy results are excluded.",
+        }
+    finally:
+        connection.close()
+
+
+def backfill_sector_trend_research(
+    market_db: Path = DEFAULT_MARKET_DB, from_date: str | None = None,
+    through_date: str | None = None, max_sessions: int = 252,
+) -> dict[str, Any]:
+    if not from_date or not through_date:
+        raise ValueError("sector_trend_backfill_window_required")
+    date.fromisoformat(from_date)
+    date.fromisoformat(through_date)
+    if from_date > through_date:
+        raise ValueError("invalid_sector_trend_backfill_window")
+    if max_sessions < 1 or max_sessions > 252:
+        raise ValueError("invalid_sector_trend_backfill_limit")
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        sessions = [str(row[0]) for row in connection.execute(
+            "SELECT DISTINCT session_date FROM opportunity_feature_ledger WHERE contract_version=? AND session_date BETWEEN ? AND ? ORDER BY session_date",
+            (OPPORTUNITY_FEATURE_CONTRACT, from_date, through_date),
+        )]
+    finally:
+        connection.close()
+    if len(sessions) > max_sessions:
+        raise ValueError("sector_trend_backfill_session_limit_exceeded")
+    completed = []
+    for session in sessions:
+        result = build_sector_trend_ledger(market_db, session)
+        completed.append({
+            "session_date": session,
+            "sector_rows": result.get("persisted_rows", 0),
+            "classified_sector_rows": result.get("coverage", {}).get("classified_sector_rows", 0),
+        })
+    return {
+        "ok": bool(completed),
+        "contract_version": "sector-trend-research-backfill-v1",
+        "requested_sessions": len(sessions),
+        "completed": completed,
+        "execution_boundary": "bounded maintenance operation; not invoked by ordinary page reads",
+    }
+
+
+STOCK_LEADERSHIP_CONTRACT = "stock-leadership-priming-v1"
+STOCK_LEADERSHIP_HISTORY_SESSIONS = 5
+
+
+def stock_leadership_classification(
+    feature_rows: list[Any], sector_trend_rows: list[Any],
+    historical_feature_rows: list[Any] | None = None, session_date: str | None = None,
+) -> dict[str, Any]:
+    rows = [dict(row) for row in feature_rows]
+    sessions = sorted({str(row.get("session_date") or "") for row in rows if row.get("session_date")})
+    if session_date:
+        date.fromisoformat(session_date)
+    if len(sessions) > 1 or (session_date and sessions and sessions[0] != session_date):
+        raise ValueError("stock_leadership_requires_single_feature_session")
+    resolved_session = session_date or (sessions[0] if sessions else None)
+    if not rows or not resolved_session:
+        return {"ok": False, "reason": "feature_ledger_session_unavailable"}
+
+    sector_by_name = {str(dict(row).get("sector")): dict(row) for row in sector_trend_rows}
+    history_by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for historical in historical_feature_rows or []:
+        item = dict(historical)
+        if item.get("symbol") and str(item.get("session_date") or "") < resolved_session:
+            history_by_symbol[str(item["symbol"])].append(item)
+    for history in history_by_symbol.values():
+        history.sort(key=lambda item: str(item.get("session_date") or ""))
+
+    generated_at = datetime.now(timezone.utc).isoformat()
+    output: list[dict[str, Any]] = []
+    for feature in rows:
+        sector = str(feature.get("sector") or "")
+        sector_row = sector_by_name.get(sector, {})
+        missing: list[str] = []
+        gating: list[str] = []
+
+        def difference(left: str, right: str, name: str, required: bool = True) -> float | None:
+            left_value = feature.get(left)
+            right_value = feature.get(right)
+            if left_value is None or right_value is None:
+                missing.append(name)
+                if required:
+                    gating.append(name)
+                return None
+            return _round(float(left_value) - float(right_value), 6)
+
+        relative_nifty = {
+            lookback: difference(
+                f"return_{lookback}d_pct", f"market_return_{lookback}d_pct",
+                f"relative_nifty_{lookback}d_pct",
+            ) for lookback in (20, 60, 120)
+        }
+        relative_sector = {
+            lookback: difference(
+                f"return_{lookback}d_pct", f"sector_return_{lookback}d_pct",
+                f"relative_sector_{lookback}d_pct",
+            ) for lookback in (20, 60, 120)
+        }
+        if not sector:
+            missing.append("sector_classification")
+            gating.append("sector_classification")
+        sector_state = sector_row.get("sector_state")
+        if not sector_state:
+            missing.append("published_sector_state")
+            gating.append("published_sector_state")
+
+        history = history_by_symbol.get(str(feature.get("symbol") or ""), [])
+        previous = history[-STOCK_LEADERSHIP_HISTORY_SESSIONS:]
+        persistence = None
+        acceleration = None
+        if len(previous) < STOCK_LEADERSHIP_HISTORY_SESSIONS:
+            missing.append("five_session_stock_history")
+            gating.append("five_session_stock_history")
+        else:
+            historical_relative = []
+            for item in previous[-4:]:
+                if item.get("return_20d_pct") is not None and item.get("sector_return_20d_pct") is not None:
+                    historical_relative.append(
+                        float(item["return_20d_pct"]) - float(item["sector_return_20d_pct"])
+                    )
+            if relative_sector[20] is not None and len(historical_relative) == 4:
+                persistence = _round(
+                    sum(value > 0 for value in historical_relative + [float(relative_sector[20])]) / 5, 6
+                )
+            else:
+                missing.append("relative_strength_persistence_ratio")
+                gating.append("relative_strength_persistence_ratio")
+            baseline = previous[0]
+            if (
+                relative_sector[20] is not None
+                and baseline.get("return_20d_pct") is not None
+                and baseline.get("sector_return_20d_pct") is not None
+            ):
+                baseline_relative = float(baseline["return_20d_pct"]) - float(baseline["sector_return_20d_pct"])
+                acceleration = _round(float(relative_sector[20]) - baseline_relative, 6)
+            else:
+                missing.append("relative_strength_acceleration_5_sessions_pct")
+                gating.append("relative_strength_acceleration_5_sessions_pct")
+
+        distance20 = feature.get("distance_sma20_pct")
+        distance50 = feature.get("distance_sma50_pct")
+        distance200 = feature.get("distance_sma200_pct")
+        if all(value is not None for value in (distance20, distance50, distance200)):
+            if all(float(value) > 0 for value in (distance20, distance50, distance200)):
+                ma_alignment = "bullish"
+            elif all(float(value) < 0 for value in (distance20, distance50, distance200)):
+                ma_alignment = "bearish"
+            else:
+                ma_alignment = "mixed"
+        else:
+            ma_alignment = None
+            missing.append("ma_alignment")
+            gating.append("ma_alignment")
+
+        optional_fields = (
+            "sma20_50_crossover_age_sessions", "volume_ratio_20d", "fno_state",
+        )
+        for key in optional_fields:
+            if feature.get(key) is None:
+                missing.append(key)
+        required_fields = (
+            "sma20_slope_5d_pct", "sma20_50_spread_pct", "range_compression_ratio_20v60",
+            "breakout_proximity_20d_pct", "volatility_expansion_ratio_20v60",
+        )
+        for key in required_fields:
+            if feature.get(key) is None:
+                missing.append(key)
+                gating.append(key)
+
+        row = {
+            "contract_version": STOCK_LEADERSHIP_CONTRACT,
+            "session_date": resolved_session,
+            "instrument_id": feature.get("instrument_id"),
+            "symbol": feature.get("symbol"),
+            "sector": feature.get("sector"),
+            "classification_status": None,
+            "ranking_admissible": False,
+            "leadership_state": None,
+            "setup_state": None,
+            "sector_state": sector_state,
+            "return_20d_pct": feature.get("return_20d_pct"),
+            "return_60d_pct": feature.get("return_60d_pct"),
+            "return_120d_pct": feature.get("return_120d_pct"),
+            "relative_nifty_20d_pct": relative_nifty[20],
+            "relative_nifty_60d_pct": relative_nifty[60],
+            "relative_nifty_120d_pct": relative_nifty[120],
+            "relative_sector_20d_pct": relative_sector[20],
+            "relative_sector_60d_pct": relative_sector[60],
+            "relative_sector_120d_pct": relative_sector[120],
+            "sector_rank_20d": sector_row.get("rank_20d"),
+            "stock_sector_rank_20d": None,
+            "stock_sector_rank_60d": None,
+            "stock_sector_rank_120d": None,
+            "stock_universe_rank_20d": None,
+            "stock_universe_rank_60d": None,
+            "stock_universe_rank_120d": None,
+            "relative_strength_persistence_ratio": persistence,
+            "relative_strength_acceleration_5_sessions_pct": acceleration,
+            "ma_alignment": ma_alignment,
+            "sma20_slope_5d_pct": feature.get("sma20_slope_5d_pct"),
+            "sma20_50_spread_pct": feature.get("sma20_50_spread_pct"),
+            "sma20_50_crossover_age_sessions": feature.get("sma20_50_crossover_age_sessions"),
+            "range_compression_ratio_20v60": feature.get("range_compression_ratio_20v60"),
+            "breakout_proximity_20d_pct": feature.get("breakout_proximity_20d_pct"),
+            "volatility_expansion_ratio_20v60": feature.get("volatility_expansion_ratio_20v60"),
+            "volume_ratio_20d": feature.get("volume_ratio_20d"),
+            "participation_status": "volume_available" if feature.get("volume_ratio_20d") is not None else "delivery_and_volume_unavailable",
+            "fno_eligible": bool(feature.get("fno_eligible")),
+            "fno_state": feature.get("fno_state"),
+            "source_dates": {
+                "feature_session": resolved_session,
+                "sector_source_date": feature.get("sector_source_date"),
+                "sector_trend_session": sector_row.get("session_date"),
+                "fno_current_session": (
+                    json.loads(feature["source_dates_json"]).get("fno_current_session")
+                    if feature.get("source_dates_json") else None
+                ),
+            },
+            "missing_inputs": sorted(set(missing)),
+            "_gating_inputs": sorted(set(gating)),
+            "_feature_ranking_admissible": bool(feature.get("ranking_admissible")),
+            "_sector_ranking_admissible": bool(sector_row.get("ranking_admissible")),
+            "generated_at": generated_at,
+        }
+        output.append(row)
+
+    sector_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in output:
+        if row.get("sector"):
+            sector_groups[str(row["sector"])].append(row)
+    for sector_rows in sector_groups.values():
+        for lookback in (20, 60, 120):
+            _assign_descending_rank(
+                sector_rows, f"relative_sector_{lookback}d_pct", f"stock_sector_rank_{lookback}d"
+            )
+    for lookback in (20, 60, 120):
+        _assign_descending_rank(output, f"relative_nifty_{lookback}d_pct", f"stock_universe_rank_{lookback}d")
+
+    for row in output:
+        gating = row.pop("_gating_inputs")
+        feature_admissible = row.pop("_feature_ranking_admissible")
+        sector_admissible = row.pop("_sector_ranking_admissible")
+        if gating:
+            row["classification_status"] = "gated"
+            continue
+        row["classification_status"] = "ready" if feature_admissible and sector_admissible else "descriptive_only"
+        sector_size = len(sector_groups[str(row["sector"])])
+        top_cutoff = max(1, math.ceil(sector_size * 0.30))
+        rel20 = float(row["relative_sector_20d_pct"])
+        rel60 = float(row["relative_sector_60d_pct"])
+        persistence = float(row["relative_strength_persistence_ratio"])
+        acceleration = float(row["relative_strength_acceleration_5_sessions_pct"])
+        slope = float(row["sma20_slope_5d_pct"])
+        if rel20 > 0 and rel60 > 0 and int(row["stock_sector_rank_20d"]) <= top_cutoff and persistence >= 0.60 and row["ma_alignment"] == "bullish":
+            row["leadership_state"] = "leading"
+        elif rel20 > 0 and acceleration > 0 and slope > 0:
+            row["leadership_state"] = "improving"
+        elif rel20 < 0 and rel60 < 0 and row["ma_alignment"] == "bearish":
+            row["leadership_state"] = "lagging"
+        elif rel20 < 0 or acceleration < 0:
+            row["leadership_state"] = "weakening"
+        else:
+            row["leadership_state"] = "neutral"
+
+        breakout = float(row["breakout_proximity_20d_pct"])
+        compression = float(row["range_compression_ratio_20v60"])
+        distance20 = float(next(
+            feature["distance_sma20_pct"] for feature in rows
+            if feature.get("instrument_id") == row["instrument_id"]
+        ))
+        if distance20 >= 8 or breakout >= 3:
+            row["setup_state"] = "extended"
+        elif breakout >= 0 and row["ma_alignment"] == "bullish":
+            row["setup_state"] = "triggered"
+        elif -3 <= breakout < 0 and compression <= 0.80 and row["ma_alignment"] == "bullish" and row["leadership_state"] in ("leading", "improving") and row["sector_state"] in ("leading", "improving"):
+            row["setup_state"] = "approaching_trigger"
+        elif breakout >= -6 and slope > 0 and row["ma_alignment"] == "bullish" and row["leadership_state"] in ("leading", "improving") and row["sector_state"] in ("leading", "improving"):
+            row["setup_state"] = "primed"
+        elif row["sector_state"] in ("weakening", "lagging") or row["leadership_state"] in ("weakening", "lagging"):
+            row["setup_state"] = "conflicted"
+        else:
+            row["setup_state"] = "unprimed"
+        row["ranking_admissible"] = bool(
+            row["classification_status"] == "ready" and feature_admissible and sector_admissible
+        )
+
+    return {
+        "ok": True,
+        "contract_version": STOCK_LEADERSHIP_CONTRACT,
+        "session_date": resolved_session,
+        "rows": output,
+        "coverage": {
+            "feature_rows": len(rows),
+            "classified_rows": sum(row["leadership_state"] is not None for row in output),
+            "gated_rows": sum(row["classification_status"] == "gated" for row in output),
+            "sectors": len(sector_groups),
+        },
+        "definitions": {
+            "trigger": "completed close at or above the prior 20-session high with bullish MA alignment",
+            "approaching_trigger": "within 3% below the prior 20-session high, compressed 20/60 range, bullish alignment, and leading/improving stock plus sector",
+            "extended": "at least 8% above the 20DMA or at least 3% above the prior 20-session high",
+            "delivery_participation": "not stored; volume participation is used only when available",
+            "forward_labels_used": False,
+            "strategy_results_used": False,
+        },
+    }
+
+
+_STOCK_LEADERSHIP_COLUMNS = (
+    "contract_version", "session_date", "instrument_id", "symbol", "sector",
+    "classification_status", "ranking_admissible", "leadership_state", "setup_state",
+    "sector_state", "return_20d_pct", "return_60d_pct", "return_120d_pct",
+    "relative_nifty_20d_pct", "relative_nifty_60d_pct", "relative_nifty_120d_pct",
+    "relative_sector_20d_pct", "relative_sector_60d_pct", "relative_sector_120d_pct",
+    "sector_rank_20d", "stock_sector_rank_20d", "stock_sector_rank_60d",
+    "stock_sector_rank_120d", "stock_universe_rank_20d", "stock_universe_rank_60d",
+    "stock_universe_rank_120d", "relative_strength_persistence_ratio",
+    "relative_strength_acceleration_5_sessions_pct", "ma_alignment", "sma20_slope_5d_pct",
+    "sma20_50_spread_pct", "sma20_50_crossover_age_sessions",
+    "range_compression_ratio_20v60", "breakout_proximity_20d_pct",
+    "volatility_expansion_ratio_20v60", "volume_ratio_20d", "participation_status",
+    "fno_eligible", "fno_state", "source_dates_json", "missing_inputs_json",
+    "generated_at", "schema_version",
+)
+
+
+def _persist_stock_leadership(connection: sqlite3.Connection, rows: list[dict[str, Any]]) -> int:
+    placeholders = ",".join("?" for _ in _STOCK_LEADERSHIP_COLUMNS)
+    values = []
+    for row in rows:
+        stored = dict(row)
+        stored["ranking_admissible"] = int(bool(row.get("ranking_admissible")))
+        stored["fno_eligible"] = int(bool(row.get("fno_eligible")))
+        stored["source_dates_json"] = json.dumps(row.get("source_dates", {}), sort_keys=True)
+        stored["missing_inputs_json"] = json.dumps(row.get("missing_inputs", []), sort_keys=True)
+        stored["schema_version"] = 1
+        values.append(tuple(stored.get(column) for column in _STOCK_LEADERSHIP_COLUMNS))
+    if values:
+        connection.executemany(
+            f"INSERT OR REPLACE INTO stock_leadership_ledger({','.join(_STOCK_LEADERSHIP_COLUMNS)}) VALUES ({placeholders})",
+            values,
+        )
+    return len(values)
+
+
+def build_stock_leadership_ledger(
+    market_db: Path = DEFAULT_MARKET_DB, as_of_date: str | None = None,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        session = as_of_date or connection.execute(
+            "SELECT MAX(session_date) FROM opportunity_feature_ledger WHERE contract_version=?",
+            (OPPORTUNITY_FEATURE_CONTRACT,),
+        ).fetchone()[0]
+        if not session:
+            return {"ok": False, "reason": "feature_ledger_empty"}
+        features = connection.execute(
+            "SELECT * FROM opportunity_feature_ledger WHERE contract_version=? AND session_date=? ORDER BY symbol",
+            (OPPORTUNITY_FEATURE_CONTRACT, session),
+        ).fetchall()
+        sectors = connection.execute(
+            "SELECT * FROM sector_trend_ledger WHERE contract_version=? AND session_date=? ORDER BY sector",
+            (SECTOR_TREND_CONTRACT, session),
+        ).fetchall()
+        if not sectors:
+            return {"ok": False, "reason": "sector_trend_session_unavailable"}
+        historical = connection.execute(
+            """SELECT * FROM opportunity_feature_ledger
+               WHERE contract_version=? AND session_date<?
+               ORDER BY session_date""",
+            (OPPORTUNITY_FEATURE_CONTRACT, session),
+        ).fetchall()
+        result = stock_leadership_classification(features, sectors, historical, str(session))
+        if result.get("ok"):
+            result["persisted_rows"] = _persist_stock_leadership(connection, result["rows"])
+            connection.commit()
+        return result
+    finally:
+        connection.close()
+
+
+def stock_leadership_history(
+    market_db: Path = DEFAULT_MARKET_DB, as_of_date: str | None = None,
+    symbol: str | None = None, sector: str | None = None, setup_state: str | None = None,
+    limit: int = 500,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    if limit < 1 or limit > 2000:
+        raise ValueError("invalid_stock_leadership_limit")
+    if as_of_date:
+        date.fromisoformat(as_of_date)
+    connection = _connect(market_db)
+    try:
+        session = as_of_date or connection.execute(
+            "SELECT MAX(session_date) FROM stock_leadership_ledger WHERE contract_version=?",
+            (STOCK_LEADERSHIP_CONTRACT,),
+        ).fetchone()[0]
+        if not session:
+            return {"ok": False, "reason": "stock_leadership_ledger_empty"}
+        filters = ["contract_version=?", "session_date=?"]
+        parameters: list[Any] = [STOCK_LEADERSHIP_CONTRACT, session]
+        for value, expression in (
+            (symbol.strip().upper() if symbol else None, "symbol=?"),
+            (sector, "sector=?"), (setup_state, "setup_state=?"),
+        ):
+            if value:
+                filters.append(expression)
+                parameters.append(value)
+        stored = connection.execute(
+            f"SELECT * FROM stock_leadership_ledger WHERE {' AND '.join(filters)} ORDER BY stock_universe_rank_20d,symbol LIMIT ?",
+            (*parameters, limit),
+        ).fetchall()
+        rows = []
+        for stored_row in stored:
+            row = dict(stored_row)
+            row["ranking_admissible"] = bool(row["ranking_admissible"])
+            row["fno_eligible"] = bool(row["fno_eligible"])
+            row["source_dates"] = json.loads(row.pop("source_dates_json"))
+            row["missing_inputs"] = json.loads(row.pop("missing_inputs_json"))
+            rows.append(row)
+        return {
+            "ok": bool(rows),
+            "reason": None if rows else "stock_leadership_rows_unavailable",
+            "contract_version": STOCK_LEADERSHIP_CONTRACT,
+            "session_date": session,
+            "rows": rows,
+            "decision_boundary": "Completed-session descriptive evidence only; no forward labels, strategy results or trade instructions.",
+        }
+    finally:
+        connection.close()
+
+
+def backfill_stock_leadership_research(
+    market_db: Path = DEFAULT_MARKET_DB, from_date: str | None = None,
+    through_date: str | None = None, max_sessions: int = 252,
+) -> dict[str, Any]:
+    if not from_date or not through_date:
+        raise ValueError("stock_leadership_backfill_window_required")
+    date.fromisoformat(from_date)
+    date.fromisoformat(through_date)
+    if from_date > through_date:
+        raise ValueError("invalid_stock_leadership_backfill_window")
+    if max_sessions < 1 or max_sessions > 252:
+        raise ValueError("invalid_stock_leadership_backfill_limit")
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        sessions = [str(row[0]) for row in connection.execute(
+            "SELECT DISTINCT session_date FROM sector_trend_ledger WHERE contract_version=? AND session_date BETWEEN ? AND ? ORDER BY session_date",
+            (SECTOR_TREND_CONTRACT, from_date, through_date),
+        )]
+    finally:
+        connection.close()
+    if len(sessions) > max_sessions:
+        raise ValueError("stock_leadership_backfill_session_limit_exceeded")
+    completed = []
+    for session in sessions:
+        result = build_stock_leadership_ledger(market_db, session)
+        completed.append({
+            "session_date": session,
+            "stock_rows": result.get("persisted_rows", 0),
+            "classified_rows": result.get("coverage", {}).get("classified_rows", 0),
+            "gated_rows": result.get("coverage", {}).get("gated_rows", 0),
+        })
+    return {
+        "ok": bool(completed),
+        "contract_version": "stock-leadership-research-backfill-v1",
+        "requested_sessions": len(sessions),
+        "completed": completed,
+        "execution_boundary": "bounded maintenance operation; not invoked by ordinary page reads",
+    }
+
+
+CROSSOVER_CONDITIONING_CONTRACT = "crossover-state-conditioning-v1"
+CROSSOVER_CONDITIONING_MINIMUM_TRADES = 15
+
+
+def _conditioned_trade_metrics(trades: list[dict[str, Any]]) -> dict[str, Any]:
+    gross = [float(row["gross_return_pct"]) for row in trades if row.get("gross_return_pct") is not None]
+    net = [float(row["net_return_pct"]) for row in trades if row.get("net_return_pct") is not None]
+
+    def profit_factor(values: list[float]) -> float | None:
+        profits = sum(value for value in values if value > 0)
+        losses = abs(sum(value for value in values if value < 0))
+        return profits / losses if losses > 0 else None
+
+    trades_by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in trades:
+        trades_by_symbol[str(row.get("symbol") or "single_series")].append(row)
+    symbol_drawdowns = []
+    for symbol_trades in trades_by_symbol.values():
+        symbol_trades.sort(key=lambda row: str(row.get("exit_execution_date") or ""))
+        equity = [1.0]
+        for row in symbol_trades:
+            if row.get("net_return_pct") is not None:
+                equity.append(equity[-1] * (1.0 + float(row["net_return_pct"]) / 100.0))
+        if len(equity) > 1:
+            symbol_drawdowns.append(_maximum_drawdown_pct(equity))
+    captures = [float(row["move_capture_ratio"]) for row in trades if row.get("move_capture_ratio") is not None]
+    return {
+        "completed_trades": len(net),
+        "gross_trade_expectancy_pct": _round(mean(gross), 6) if gross else None,
+        "net_trade_expectancy_pct": _round(mean(net), 6) if net else None,
+        "gross_profit_factor": _round(profit_factor(gross), 6),
+        "net_profit_factor": _round(profit_factor(net), 6),
+        "net_maximum_drawdown_pct": min(symbol_drawdowns) if symbol_drawdowns else None,
+        "average_move_capture_ratio": _round(mean(captures), 6) if captures else None,
+    }
+
+
+def crossover_state_conditioning_contract(
+    joined_trades: list[dict[str, Any]],
+    state_observations: dict[tuple[str, str], int],
+) -> dict[str, Any]:
+    dimensions = (
+        "market_regime", "sector_state", "stock_leadership", "setup_state", "fno_state",
+    )
+    strategies = ("sma_20_50", "ema_20_50")
+    rows = []
+    for strategy in strategies:
+        strategy_trades = [row for row in joined_trades if row.get("strategy") == strategy]
+        for dimension in dimensions:
+            states = sorted({
+                state for (observed_dimension, state), count in state_observations.items()
+                if observed_dimension == dimension and count > 0
+            })
+            for state in states:
+                bucket = [row for row in strategy_trades if row.get(dimension) == state]
+                metrics = _conditioned_trade_metrics(bucket)
+                missing = []
+                if metrics["completed_trades"] < CROSSOVER_CONDITIONING_MINIMUM_TRADES:
+                    missing.append("completed_trades_below_15")
+                if metrics["net_profit_factor"] is None:
+                    missing.append("net_profit_factor_unavailable")
+                if metrics["average_move_capture_ratio"] is None:
+                    missing.append("move_capture_unavailable")
+                rows.append({
+                    "contract_version": CROSSOVER_CONDITIONING_CONTRACT,
+                    "strategy": strategy,
+                    "dimension": dimension,
+                    "state": state,
+                    "state_observations": int(state_observations[(dimension, state)]),
+                    **metrics,
+                    "evidence_status": "descriptive_sample_sufficient" if not missing else "insufficient_evidence",
+                    "missing_evidence": missing,
+                })
+    return {
+        "ok": True,
+        "contract_version": CROSSOVER_CONDITIONING_CONTRACT,
+        "parameters": {
+            "sma_windows": [20, 50],
+            "ema_windows": [20, 50],
+            "execution": "completed_close_signal_executed_next_session_open",
+            "cost_model": EQUITY_DELIVERY_COST_SCHEDULE["schedule_version"],
+            "minimum_completed_trades": CROSSOVER_CONDITIONING_MINIMUM_TRADES,
+            "parameters_optimised": False,
+        },
+        "joined_completed_trades": len(joined_trades),
+        "rows": rows,
+    }
+
+
+def build_crossover_state_conditioning(
+    market_db: Path = DEFAULT_MARKET_DB, return_internal: bool = False,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        reference_context = _backtest_reference_context(connection)
+        instruments = connection.execute(
+            """SELECT DISTINCT i.instrument_id,i.display_name
+               FROM instruments i JOIN stock_leadership_ledger s USING(instrument_id)
+               WHERE i.kind='stock' ORDER BY i.instrument_id"""
+        ).fetchall()
+        market_states = {
+            str(row["session_date"]): str(row["regime_family"])
+            for row in connection.execute(
+                """SELECT session_date,regime_family FROM market_regime_ledger
+                   WHERE contract_version=? AND classification_status!='gated' AND regime_family IS NOT NULL""",
+                (MARKET_REGIME_CONTRACT,),
+            )
+        }
+        stock_states = {
+            (str(row["session_date"]), str(row["symbol"])): dict(row)
+            for row in connection.execute(
+                """SELECT session_date,symbol,sector_state,leadership_state,setup_state,
+                          fno_eligible,fno_state
+                   FROM stock_leadership_ledger
+                   WHERE contract_version=? AND classification_status!='gated'""",
+                (STOCK_LEADERSHIP_CONTRACT,),
+            )
+        }
+        state_observations: dict[tuple[str, str], int] = defaultdict(int)
+        for state in market_states.values():
+            state_observations[("market_regime", state)] += 1
+        for row in stock_states.values():
+            for dimension, key in (
+                ("sector_state", "sector_state"),
+                ("stock_leadership", "leadership_state"),
+                ("setup_state", "setup_state"),
+            ):
+                if row.get(key):
+                    state_observations[(dimension, str(row[key]))] += 1
+            if row.get("fno_state"):
+                normalised_fno_state = (
+                    "neutral" if row["fno_state"] == "no_clear_signal" else str(row["fno_state"])
+                )
+                state_observations[("fno_state", normalised_fno_state)] += 1
+
+        joined_trades: list[dict[str, Any]] = []
+        baseline_trades: list[dict[str, Any]] = []
+        quality_gated = 0
+        completed_before_join = 0
+        for instrument in instruments:
+            prepared, audit = _quality_checked_backtest_series(
+                connection, instrument["instrument_id"], 51, reference_context, "comparison"
+            )
+            if audit.get("status") != "ready":
+                quality_gated += 1
+                continue
+            symbol = str(instrument["instrument_id"]).split(":", 1)[-1]
+            for strategy, runner in (
+                ("sma_20_50", _moving_average_crossover_series),
+                ("ema_20_50", _ema_crossover_series),
+            ):
+                result = runner(prepared, 20, 50)
+                trades = result.get("_completed_trades") or []
+                completed_before_join += len(trades)
+                for trade in trades:
+                    baseline_trades.append({**trade, "strategy": strategy, "symbol": symbol})
+                    entry_date = str(trade.get("entry_signal_date") or "")
+                    stock_state = stock_states.get((entry_date, symbol))
+                    market_state = market_states.get(entry_date)
+                    if not stock_state or not market_state:
+                        continue
+                    joined_trades.append({
+                        **trade,
+                        "strategy": strategy,
+                        "symbol": symbol,
+                        "market_regime": market_state,
+                        "sector_state": stock_state.get("sector_state"),
+                        "stock_leadership": stock_state.get("leadership_state"),
+                        "setup_state": stock_state.get("setup_state"),
+                        "fno_state": (
+                            "neutral" if stock_state.get("fno_state") == "no_clear_signal"
+                            else stock_state.get("fno_state")
+                        ),
+                    })
+        contract = crossover_state_conditioning_contract(joined_trades, state_observations)
+        generated_at = datetime.now(timezone.utc).isoformat()
+        connection.execute(
+            "DELETE FROM crossover_conditioning_ledger WHERE contract_version=?",
+            (CROSSOVER_CONDITIONING_CONTRACT,),
+        )
+        for row in contract["rows"]:
+            connection.execute(
+                """INSERT INTO crossover_conditioning_ledger(
+                       contract_version,generated_at,strategy,dimension,state,state_observations,
+                       completed_trades,gross_trade_expectancy_pct,net_trade_expectancy_pct,
+                       gross_profit_factor,net_profit_factor,net_maximum_drawdown_pct,
+                       average_move_capture_ratio,evidence_status,missing_evidence_json,schema_version)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+                (
+                    row["contract_version"], generated_at, row["strategy"], row["dimension"],
+                    row["state"], row["state_observations"], row["completed_trades"],
+                    row["gross_trade_expectancy_pct"], row["net_trade_expectancy_pct"],
+                    row["gross_profit_factor"], row["net_profit_factor"],
+                    row["net_maximum_drawdown_pct"], row["average_move_capture_ratio"],
+                    row["evidence_status"], json.dumps(row["missing_evidence"], sort_keys=True),
+                ),
+            )
+        connection.commit()
+        contract.update({
+            "generated_at": generated_at,
+            "instruments_requested": len(instruments),
+            "quality_gated_instruments": quality_gated,
+            "completed_trades_before_state_join": completed_before_join,
+            "completed_trades_after_state_join": len(joined_trades),
+            "fno_available_state_observations": sum(
+                count for (dimension, _state), count in state_observations.items()
+                if dimension == "fno_state"
+            ),
+            "fno_unavailable_state_observations": sum(
+                not bool(row.get("fno_state")) for row in stock_states.values()
+            ),
+            "completed_trades_with_fno_state": sum(bool(row.get("fno_state")) for row in joined_trades),
+            "completed_trades_without_fno_state": sum(not bool(row.get("fno_state")) for row in joined_trades),
+            "persisted_rows": len(contract["rows"]),
+            "sample_boundary": "Only completed trades whose entry signal date has admissible frozen state ledgers are joined; sample sufficiency is not out-of-sample edge validation.",
+            "fno_boundary": "Same front-month contract is compared only with its prior completed observation; stale gaps, missing baselines and expiry/roll changes remain unavailable rather than inferred.",
+        })
+        if return_internal:
+            contract["_baseline_trades"] = baseline_trades
+            contract["_joined_trades"] = joined_trades
+        return contract
+    finally:
+        connection.close()
+
+
+def crossover_state_conditioning_history(
+    market_db: Path = DEFAULT_MARKET_DB, strategy: str | None = None,
+    dimension: str | None = None,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        filters = ["contract_version=?"]
+        parameters: list[Any] = [CROSSOVER_CONDITIONING_CONTRACT]
+        for value, expression in ((strategy, "strategy=?"), (dimension, "dimension=?")):
+            if value:
+                filters.append(expression)
+                parameters.append(value)
+        stored = connection.execute(
+            f"SELECT * FROM crossover_conditioning_ledger WHERE {' AND '.join(filters)} ORDER BY strategy,dimension,state",
+            parameters,
+        ).fetchall()
+        rows = []
+        for stored_row in stored:
+            row = dict(stored_row)
+            row["missing_evidence"] = json.loads(row.pop("missing_evidence_json"))
+            rows.append(row)
+        return {
+            "ok": bool(rows),
+            "reason": None if rows else "crossover_conditioning_ledger_empty",
+            "contract_version": CROSSOVER_CONDITIONING_CONTRACT,
+            "rows": rows,
+            "decision_boundary": "Descriptive conditioning of frozen baselines; no parameter search and no ranking is published for insufficient samples.",
+        }
+    finally:
+        connection.close()
+
+
+CROSSOVER_ABLATION_CONTRACT = "crossover-top-down-ablation-v1"
+
+
+def crossover_ablation_contract(
+    baseline_trades: list[dict[str, Any]], joined_trades: list[dict[str, Any]],
+) -> dict[str, Any]:
+    stage_definitions = (
+        {
+            "key": "crossover_only", "label": "Crossover only",
+            "rule": "All completed trades from the unchanged 20/50 baseline.",
+        },
+        {
+            "key": "market_regime", "label": "+ market regime",
+            "rule": "Entry state is bullish_trend or transition.",
+        },
+        {
+            "key": "sector_trend", "label": "+ sector trend",
+            "rule": "Sector state is leading or improving.",
+        },
+        {
+            "key": "stock_priming", "label": "+ stock leadership / priming",
+            "rule": "Stock is leading/improving and setup is primed, approaching_trigger or triggered.",
+        },
+        {
+            "key": "fno_alignment", "label": "+ F&O state",
+            "rule": "Same-contract F&O state is long_build_up or short_covering.",
+        },
+    )
+    rows = []
+    for strategy in ("sma_20_50", "ema_20_50"):
+        baseline = [row for row in baseline_trades if row.get("strategy") == strategy]
+        state_joined = [row for row in joined_trades if row.get("strategy") == strategy]
+        selected = baseline
+        previous_metrics = None
+        for order, definition in enumerate(stage_definitions, start=1):
+            prior_selected = selected
+            if order == 1:
+                eligible = baseline
+                selected = baseline
+            elif order == 2:
+                eligible = state_joined
+                selected = [
+                    row for row in eligible
+                    if row.get("market_regime") in ("bullish_trend", "transition")
+                ]
+            elif order == 3:
+                eligible = [row for row in prior_selected if row.get("sector_state")]
+                selected = [
+                    row for row in eligible
+                    if row.get("sector_state") in ("leading", "improving")
+                ]
+            elif order == 4:
+                eligible = [
+                    row for row in prior_selected
+                    if row.get("stock_leadership") and row.get("setup_state")
+                ]
+                selected = [
+                    row for row in eligible
+                    if row.get("stock_leadership") in ("leading", "improving")
+                    and row.get("setup_state") in ("primed", "approaching_trigger", "triggered")
+                ]
+            else:
+                eligible = [row for row in prior_selected if row.get("fno_state")]
+                selected = [
+                    row for row in eligible
+                    if row.get("fno_state") in ("long_build_up", "short_covering")
+                ]
+            metrics = _conditioned_trade_metrics(selected)
+
+            def delta(key: str) -> float | None:
+                if not previous_metrics or metrics.get(key) is None or previous_metrics.get(key) is None:
+                    return None
+                return _round(float(metrics[key]) - float(previous_metrics[key]), 6)
+
+            delta_expectancy = delta("net_trade_expectancy_pct")
+            delta_pf = delta("net_profit_factor")
+            delta_drawdown = delta("net_maximum_drawdown_pct")
+            delta_capture = delta("average_move_capture_ratio")
+            sample_status = (
+                "descriptive_sample_sufficient"
+                if metrics["completed_trades"] >= CROSSOVER_CONDITIONING_MINIMUM_TRADES
+                else "insufficient_evidence"
+            )
+            if order == 1:
+                incremental_status = "baseline"
+            elif sample_status != "descriptive_sample_sufficient":
+                incremental_status = "insufficient_evidence"
+            elif (
+                delta_expectancy is not None and delta_expectancy > 0
+                and any(value is not None and value > 0 for value in (
+                    delta_pf, delta_drawdown, delta_capture,
+                ))
+            ):
+                incremental_status = "incremental_improvement_observed"
+            else:
+                incremental_status = "no_incremental_improvement"
+            rows.append({
+                "contract_version": CROSSOVER_ABLATION_CONTRACT,
+                "strategy": strategy,
+                "stage_order": order,
+                "stage_key": definition["key"],
+                "stage_label": definition["label"],
+                "stage_rule": definition["rule"],
+                "prior_stage_trades": None if order == 1 else len(prior_selected),
+                "state_eligible_trades": len(eligible),
+                "unavailable_state_trades": 0 if order == 1 else len(prior_selected) - len(eligible),
+                "filter_excluded_trades": len(eligible) - len(selected),
+                "baseline_retention_ratio": _round(len(selected) / len(baseline), 6) if baseline else 0.0,
+                **metrics,
+                "delta_net_expectancy_pct": delta_expectancy,
+                "delta_net_profit_factor": delta_pf,
+                "delta_net_drawdown_pct": delta_drawdown,
+                "delta_move_capture_ratio": delta_capture,
+                "sample_status": sample_status,
+                "incremental_status": incremental_status,
+            })
+            previous_metrics = metrics
+    return {
+        "ok": True,
+        "contract_version": CROSSOVER_ABLATION_CONTRACT,
+        "stage_definitions": list(stage_definitions),
+        "rows": rows,
+        "decision_boundary": (
+            "Rules are frozen before inspecting stage returns. Results are descriptive; "
+            "incremental improvement is not an out-of-sample edge claim."
+        ),
+    }
+
+
+def build_crossover_ablation_ladder(
+    market_db: Path = DEFAULT_MARKET_DB,
+) -> dict[str, Any]:
+    conditioning = build_crossover_state_conditioning(market_db, return_internal=True)
+    baseline = conditioning.pop("_baseline_trades")
+    joined = conditioning.pop("_joined_trades")
+    contract = crossover_ablation_contract(baseline, joined)
+    generated_at = datetime.now(timezone.utc).isoformat()
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        connection.execute(
+            "DELETE FROM crossover_ablation_ledger WHERE contract_version=?",
+            (CROSSOVER_ABLATION_CONTRACT,),
+        )
+        for row in contract["rows"]:
+            connection.execute(
+                """INSERT INTO crossover_ablation_ledger(
+                       contract_version,generated_at,strategy,stage_order,stage_key,stage_label,
+                       prior_stage_trades,state_eligible_trades,unavailable_state_trades,
+                       filter_excluded_trades,completed_trades,baseline_retention_ratio,
+                       gross_trade_expectancy_pct,net_trade_expectancy_pct,gross_profit_factor,
+                       net_profit_factor,net_maximum_drawdown_pct,average_move_capture_ratio,
+                       delta_net_expectancy_pct,delta_net_profit_factor,delta_net_drawdown_pct,
+                       delta_move_capture_ratio,sample_status,incremental_status,schema_version)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+                (
+                    row["contract_version"], generated_at, row["strategy"], row["stage_order"],
+                    row["stage_key"], row["stage_label"], row["prior_stage_trades"],
+                    row["state_eligible_trades"], row["unavailable_state_trades"],
+                    row["filter_excluded_trades"], row["completed_trades"],
+                    row["baseline_retention_ratio"], row["gross_trade_expectancy_pct"],
+                    row["net_trade_expectancy_pct"], row["gross_profit_factor"],
+                    row["net_profit_factor"], row["net_maximum_drawdown_pct"],
+                    row["average_move_capture_ratio"], row["delta_net_expectancy_pct"],
+                    row["delta_net_profit_factor"], row["delta_net_drawdown_pct"],
+                    row["delta_move_capture_ratio"], row["sample_status"],
+                    row["incremental_status"],
+                ),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+    contract.update({
+        "generated_at": generated_at,
+        "persisted_rows": len(contract["rows"]),
+        "baseline_completed_trades": len(baseline),
+        "state_joined_completed_trades": len(joined),
+    })
+    return contract
+
+
+def crossover_ablation_history(
+    market_db: Path = DEFAULT_MARKET_DB, strategy: str | None = None,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        filters = ["contract_version=?"]
+        parameters: list[Any] = [CROSSOVER_ABLATION_CONTRACT]
+        if strategy:
+            filters.append("strategy=?")
+            parameters.append(strategy)
+        rows = [dict(row) for row in connection.execute(
+            f"SELECT * FROM crossover_ablation_ledger WHERE {' AND '.join(filters)} ORDER BY strategy,stage_order",
+            parameters,
+        )]
+        return {
+            "ok": bool(rows),
+            "reason": None if rows else "crossover_ablation_ledger_empty",
+            "contract_version": CROSSOVER_ABLATION_CONTRACT,
+            "rows": rows,
+            "decision_boundary": "Frozen descriptive ladder only; OOS validation is the next milestone.",
+        }
+    finally:
+        connection.close()
+
+
+TOP_DOWN_OOS_ADMISSION_CONTRACT = "top-down-oos-admission-v1"
+TOP_DOWN_OOS_MINIMUM_TRADES = 15
+TOP_DOWN_OOS_MINIMUM_STATE_COVERAGE = 0.95
+
+
+def top_down_oos_admission_contract(
+    ablation_rows: list[dict[str, Any]], oos_family_audit: dict[str, Any],
+) -> dict[str, Any]:
+    rows = []
+    for strategy in ("sma_20_50", "ema_20_50"):
+        stages = sorted(
+            (dict(row) for row in ablation_rows if row.get("strategy") == strategy),
+            key=lambda row: int(row.get("stage_order") or 0),
+        )
+        if not stages:
+            continue
+        baseline = stages[0]
+        final_stage = stages[-1]
+        market_stage = next((row for row in stages if row.get("stage_key") == "market_regime"), {})
+        baseline_trades = int(baseline.get("completed_trades") or 0)
+        state_coverage_ratio = (
+            int(market_stage.get("state_eligible_trades") or 0) / baseline_trades
+            if baseline_trades else 0.0
+        )
+        ablation_pass = all(
+            row.get("incremental_status") == "incremental_improvement_observed"
+            for row in stages[1:]
+        )
+        trade_pass = int(final_stage.get("completed_trades") or 0) >= TOP_DOWN_OOS_MINIMUM_TRADES
+        expectancy = final_stage.get("net_trade_expectancy_pct")
+        expectancy_pass = expectancy is not None and float(expectancy) > 0
+        profit_factor = final_stage.get("net_profit_factor")
+        profit_factor_pass = profit_factor is not None and float(profit_factor) > 1.0
+        coverage_pass = state_coverage_ratio >= TOP_DOWN_OOS_MINIMUM_STATE_COVERAGE
+        pre_admission_pass = all((
+            ablation_pass, trade_pass, expectancy_pass, profit_factor_pass, coverage_pass,
+        ))
+        failure_reasons = []
+        if not ablation_pass:
+            failure_reasons.append("ablation_gate_failed")
+        if not trade_pass:
+            failure_reasons.append("final_stage_completed_trades_below_15")
+        if not expectancy_pass:
+            failure_reasons.append("final_stage_net_expectancy_not_positive")
+        if not profit_factor_pass:
+            failure_reasons.append("final_stage_net_profit_factor_not_above_one")
+        if not coverage_pass:
+            failure_reasons.append("dated_state_coverage_below_95_pct")
+        if not bool(oos_family_audit.get("coverage_complete")):
+            failure_reasons.append("cross_strategy_oos_family_incomplete")
+        if int(oos_family_audit.get("fdr_q_below_alpha") or 0) < 1:
+            failure_reasons.append("no_cross_strategy_fdr_admission")
+        execution_status = (
+            "pending_complete_model_oos" if pre_admission_pass
+            else "not_run_pre_admission_failed"
+        )
+        rows.append({
+            "contract_version": TOP_DOWN_OOS_ADMISSION_CONTRACT,
+            "strategy": strategy,
+            "admission_decision": "pending_oos" if pre_admission_pass else "rejected",
+            "ablation_gate_passed": ablation_pass,
+            "minimum_trade_gate_passed": trade_pass,
+            "positive_net_expectancy_gate_passed": expectancy_pass,
+            "profit_factor_gate_passed": profit_factor_pass,
+            "state_coverage_gate_passed": coverage_pass,
+            "final_stage_trades": int(final_stage.get("completed_trades") or 0),
+            "final_stage_net_expectancy_pct": expectancy,
+            "final_stage_net_profit_factor": profit_factor,
+            "state_coverage_ratio": _round(state_coverage_ratio, 6),
+            "walk_forward_status": execution_status,
+            "bootstrap_status": execution_status,
+            "within_strategy_fdr_status": execution_status,
+            "cross_strategy_fdr_status": (
+                "complete" if oos_family_audit.get("coverage_complete") else "incomplete"
+            ),
+            "oos_score": None,
+            "failure_reasons": sorted(set(failure_reasons)),
+            "audit": {
+                "ablation_contract": CROSSOVER_ABLATION_CONTRACT,
+                "final_stage": final_stage.get("stage_key"),
+                "baseline_completed_trades": baseline_trades,
+                "state_eligible_trades": int(market_stage.get("state_eligible_trades") or 0),
+                "required_minimum_trades": TOP_DOWN_OOS_MINIMUM_TRADES,
+                "required_state_coverage_ratio": TOP_DOWN_OOS_MINIMUM_STATE_COVERAGE,
+                "cross_strategy_contract": oos_family_audit.get("contract_version"),
+                "cross_strategy_tested_hypotheses": int(oos_family_audit.get("tested_hypotheses") or 0),
+                "cross_strategy_fdr_admitted": int(oos_family_audit.get("fdr_q_below_alpha") or 0),
+                "cost_model": EQUITY_DELIVERY_COST_SCHEDULE["schedule_version"],
+                "point_in_time_state_join_required": True,
+            },
+        })
+    return {
+        "ok": bool(rows),
+        "contract_version": TOP_DOWN_OOS_ADMISSION_CONTRACT,
+        "rows": rows,
+        "admitted_strategies": sum(row["admission_decision"] == "admitted" for row in rows),
+        "rejected_strategies": sum(row["admission_decision"] == "rejected" for row in rows),
+        "decision_boundary": (
+            "A failed pre-admission gate stops complete-model OOS execution. Missing "
+            "walk-forward, bootstrap or FDR evidence is never treated as a pass."
+        ),
+    }
+
+
+def build_top_down_oos_admission(
+    market_db: Path = DEFAULT_MARKET_DB,
+) -> dict[str, Any]:
+    ablation = build_crossover_ablation_ladder(market_db)
+    oos_audit = cross_strategy_multiple_testing(market_db, start_background=False)
+    contract = top_down_oos_admission_contract(ablation["rows"], oos_audit)
+    generated_at = datetime.now(timezone.utc).isoformat()
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        connection.execute(
+            "DELETE FROM top_down_oos_admission_ledger WHERE contract_version=?",
+            (TOP_DOWN_OOS_ADMISSION_CONTRACT,),
+        )
+        for row in contract["rows"]:
+            connection.execute(
+                """INSERT INTO top_down_oos_admission_ledger(
+                       contract_version,generated_at,strategy,admission_decision,
+                       ablation_gate_passed,minimum_trade_gate_passed,
+                       positive_net_expectancy_gate_passed,profit_factor_gate_passed,
+                       state_coverage_gate_passed,final_stage_trades,
+                       final_stage_net_expectancy_pct,final_stage_net_profit_factor,
+                       state_coverage_ratio,walk_forward_status,bootstrap_status,
+                       within_strategy_fdr_status,cross_strategy_fdr_status,oos_score,
+                       failure_reasons_json,audit_json,schema_version)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+                (
+                    row["contract_version"], generated_at, row["strategy"],
+                    row["admission_decision"], int(row["ablation_gate_passed"]),
+                    int(row["minimum_trade_gate_passed"]),
+                    int(row["positive_net_expectancy_gate_passed"]),
+                    int(row["profit_factor_gate_passed"]),
+                    int(row["state_coverage_gate_passed"]), row["final_stage_trades"],
+                    row["final_stage_net_expectancy_pct"], row["final_stage_net_profit_factor"],
+                    row["state_coverage_ratio"], row["walk_forward_status"],
+                    row["bootstrap_status"], row["within_strategy_fdr_status"],
+                    row["cross_strategy_fdr_status"], row["oos_score"],
+                    json.dumps(row["failure_reasons"], sort_keys=True),
+                    json.dumps(row["audit"], sort_keys=True),
+                ),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+    contract.update({
+        "generated_at": generated_at,
+        "persisted_rows": len(contract["rows"]),
+        "oos_family_audit": {
+            "contract_version": oos_audit.get("contract_version"),
+            "coverage_complete": bool(oos_audit.get("coverage_complete")),
+            "tested_hypotheses": int(oos_audit.get("tested_hypotheses") or 0),
+            "fdr_q_below_alpha": int(oos_audit.get("fdr_q_below_alpha") or 0),
+            "missing_engines": oos_audit.get("missing_engines") or [],
+        },
+    })
+    return contract
+
+
+def top_down_oos_admission_history(
+    market_db: Path = DEFAULT_MARKET_DB,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        stored = connection.execute(
+            "SELECT * FROM top_down_oos_admission_ledger WHERE contract_version=? ORDER BY strategy",
+            (TOP_DOWN_OOS_ADMISSION_CONTRACT,),
+        ).fetchall()
+        rows = []
+        for stored_row in stored:
+            row = dict(stored_row)
+            for key in (
+                "ablation_gate_passed", "minimum_trade_gate_passed",
+                "positive_net_expectancy_gate_passed", "profit_factor_gate_passed",
+                "state_coverage_gate_passed",
+            ):
+                row[key] = bool(row[key])
+            row["failure_reasons"] = json.loads(row.pop("failure_reasons_json"))
+            row["audit"] = json.loads(row.pop("audit_json"))
+            rows.append(row)
+        return {
+            "ok": bool(rows),
+            "reason": None if rows else "top_down_oos_admission_empty",
+            "contract_version": TOP_DOWN_OOS_ADMISSION_CONTRACT,
+            "rows": rows,
+            "opportunity_board_authorised": any(
+                row["admission_decision"] == "admitted" for row in rows
+            ),
+        }
+    finally:
+        connection.close()
+
+
+OPPORTUNITY_BOARD_RELEASE_CONTRACT = "opportunity-board-release-v1"
+
+
+def opportunity_board_release_contract(
+    admission_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    rows = [dict(row) for row in admission_rows]
+    admitted = [row for row in rows if row.get("admission_decision") == "admitted"]
+    rejected = [row for row in rows if row.get("admission_decision") == "rejected"]
+    authorised = bool(admitted)
+    reasons = sorted({
+        str(reason)
+        for row in rows for reason in (row.get("failure_reasons") or [])
+    })
+    if authorised:
+        decision = "authorised"
+        ui_mode = "validated_opportunity_board"
+        headline = "Validated opportunity board authorised"
+        explanation = (
+            f"{len(admitted)} strategy contract(s) passed every frozen admission gate."
+        )
+        next_action = "Build the sector-first board strictly from admitted strategy contracts."
+    else:
+        decision = "withheld"
+        ui_mode = "research_status_only"
+        headline = "Opportunity board withheld"
+        explanation = (
+            "No strategy passed ablation and out-of-sample admission. Rankings, "
+            "opportunity scores, trade labels and order controls remain disabled."
+        )
+        next_action = (
+            "Begin a separately specified research cycle with hypotheses frozen before results are inspected."
+        )
+    return {
+        "ok": bool(rows),
+        "reason": None if rows else "oos_admission_unavailable",
+        "contract_version": OPPORTUNITY_BOARD_RELEASE_CONTRACT,
+        "release_decision": decision,
+        "board_authorised": authorised,
+        "ui_mode": ui_mode,
+        "admitted_strategies": len(admitted),
+        "rejected_strategies": len(rejected),
+        "headline": headline,
+        "explanation": explanation,
+        "failure_reasons": reasons,
+        "next_action": next_action,
+        "prohibited_outputs": [] if authorised else [
+            "opportunity_rank", "opportunity_score", "trade_label",
+            "target_price", "position_size", "order_control",
+        ],
+    }
+
+
+def build_opportunity_board_release(
+    market_db: Path = DEFAULT_MARKET_DB,
+) -> dict[str, Any]:
+    admission = top_down_oos_admission_history(market_db)
+    if not admission.get("ok"):
+        build_top_down_oos_admission(market_db)
+        admission = top_down_oos_admission_history(market_db)
+    contract = opportunity_board_release_contract(admission.get("rows") or [])
+    if not contract.get("ok"):
+        return contract
+    generated_at = datetime.now(timezone.utc).isoformat()
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        connection.execute(
+            """INSERT OR REPLACE INTO opportunity_board_release_ledger(
+                   contract_version,generated_at,release_decision,board_authorised,ui_mode,
+                   admitted_strategies,rejected_strategies,headline,explanation,
+                   failure_reasons_json,next_action,schema_version)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,1)""",
+            (
+                contract["contract_version"], generated_at, contract["release_decision"],
+                int(contract["board_authorised"]), contract["ui_mode"],
+                contract["admitted_strategies"], contract["rejected_strategies"],
+                contract["headline"], contract["explanation"],
+                json.dumps(contract["failure_reasons"], sort_keys=True), contract["next_action"],
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    contract["generated_at"] = generated_at
+    return contract
+
+
+def opportunity_board_release_status(
+    market_db: Path = DEFAULT_MARKET_DB,
+) -> dict[str, Any]:
+    ensure_workspace_schema(market_db)
+    connection = _connect(market_db)
+    try:
+        stored = connection.execute(
+            "SELECT * FROM opportunity_board_release_ledger WHERE contract_version=?",
+            (OPPORTUNITY_BOARD_RELEASE_CONTRACT,),
+        ).fetchone()
+        if not stored:
+            return {"ok": False, "reason": "opportunity_board_release_unavailable"}
+        row = dict(stored)
+        row["board_authorised"] = bool(row["board_authorised"])
+        row["failure_reasons"] = json.loads(row.pop("failure_reasons_json"))
+        row["prohibited_outputs"] = [] if row["board_authorised"] else [
+            "opportunity_rank", "opportunity_score", "trade_label",
+            "target_price", "position_size", "order_control",
+        ]
+        row["ok"] = True
+        return row
+    finally:
+        connection.close()
 
 
 BACKTEST_COMPARISON_SESSIONS = 252
@@ -2864,6 +5960,321 @@ def _attach_benjamini_hochberg_fdr(
     }
 
 
+def _clamp_unit(value: float) -> float:
+    return min(1.0, max(0.0, value))
+
+
+def _attach_comparison_evidence_rankings(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Attach a transparent first-stage score without ranking failed evidence.
+
+    This contract deliberately uses the common 252-session comparison window.
+    Full walk-forward/OOS substitution is the next increment; until then the
+    contract remains provisional and exposes a diagnostic score only when gated.
+    """
+    weights = {
+        "net_profit_factor": 20.0,
+        "net_trade_edge": 15.0,
+        "completed_trade_sample": 10.0,
+        "within_strategy_confidence": 15.0,
+        "drawdown_control": 10.0,
+        "excess_return": 10.0,
+        "exposure_quality": 5.0,
+        "turnover_efficiency": 5.0,
+        "cost_efficiency": 5.0,
+        "period_stability": 5.0,
+    }
+    admitted = 0
+    for row in results:
+        if row.get("status") != "ready":
+            row["evidence_ranking"] = {
+                "status": "gated", "ranking_admissible": False,
+                "score": None, "diagnostic_score": None,
+                "failed_checks": ["data_quality"],
+            }
+            continue
+        profit_factor = float(row.get("net_profit_factor") or 0.0)
+        edge = float(row.get("net_trade_expectancy_pct") or 0.0)
+        trades = int(row.get("completed_trades") or 0)
+        q_value = row.get("net_trade_edge_q_value")
+        drawdown = float(row.get("net_maximum_drawdown_pct") or -100.0)
+        excess = float(row.get("excess_return_pct") or 0.0)
+        exposure = float(row.get("exposure_pct") or 0.0)
+        completed_turns = int(row.get("executed_sells") or 0)
+        cost_drag = max(0.0, float(row.get("estimated_cost_drag_pct") or 0.0))
+        components = {
+            "net_profit_factor": weights["net_profit_factor"] * _clamp_unit((profit_factor - 1.0) / 1.5),
+            "net_trade_edge": weights["net_trade_edge"] * _clamp_unit(edge / 5.0),
+            "completed_trade_sample": weights["completed_trade_sample"] * _clamp_unit(trades / 25.0),
+            "within_strategy_confidence": weights["within_strategy_confidence"] * _clamp_unit((0.10 - float(q_value)) / 0.10) if q_value is not None else 0.0,
+            "drawdown_control": weights["drawdown_control"] * _clamp_unit((drawdown + 30.0) / 30.0),
+            "excess_return": weights["excess_return"] * _clamp_unit((excess + 10.0) / 30.0),
+            "exposure_quality": weights["exposure_quality"] * _clamp_unit(1.0 - abs(exposure - 50.0) / 50.0),
+            "turnover_efficiency": weights["turnover_efficiency"] * _clamp_unit(1.0 - completed_turns / 20.0),
+            "cost_efficiency": weights["cost_efficiency"] * _clamp_unit(1.0 - cost_drag / 10.0),
+            "period_stability": 0.0,
+        }
+        checks = {
+            "minimum_completed_trades": trades >= 15,
+            "net_profit_factor": profit_factor >= 1.10,
+            "positive_net_trade_edge": edge > 0,
+            "within_strategy_fdr": q_value is not None and float(q_value) <= 0.05,
+            "drawdown_limit": drawdown >= -25.0,
+            "positive_excess_return": excess > 0,
+            "out_of_sample_stability": False,
+        }
+        failed = [name for name, passed in checks.items() if not passed]
+        diagnostic = sum(components.values())
+        ranking_admissible = not failed
+        admitted += int(ranking_admissible)
+        row["evidence_ranking"] = {
+            "contract_version": "comparison-evidence-ranking-v1",
+            "status": "admitted" if ranking_admissible else "gated",
+            "ranking_admissible": ranking_admissible,
+            "score": _round(diagnostic, 2) if ranking_admissible else None,
+            "diagnostic_score": _round(diagnostic, 2),
+            "components": {name: _round(value, 2) for name, value in components.items()},
+            "weights": weights,
+            "checks": checks,
+            "failed_checks": failed,
+            "provisional": True,
+            "decision_boundary": "A diagnostic score is visible for audit, but failed evidence is never assigned a rank.",
+        }
+    return {
+        "contract_version": "comparison-evidence-ranking-v1",
+        "status": "provisional_pending_oos_substitution",
+        "admitted": admitted,
+        "ranking_admitted": admitted,
+        "gated": len(results) - admitted,
+        "weights": weights,
+        "hard_gates": [
+            "minimum_completed_trades", "net_profit_factor", "positive_net_trade_edge",
+            "within_strategy_fdr", "drawdown_limit", "positive_excess_return",
+            "out_of_sample_stability",
+        ],
+    }
+
+
+_UNIVERSE_OOS_LOCK = threading.Lock()
+_UNIVERSE_OOS_CACHE: dict[str, dict[str, Any]] = {}
+_UNIVERSE_OOS_LATEST: dict[str, dict[str, Any]] = {}
+
+
+def _compact_walk_forward_evidence(validation: dict[str, Any], audit: dict[str, Any]) -> dict[str, Any]:
+    if validation.get("status") != "ready":
+        return {
+            "status": "insufficient_full_history",
+            "contract_version": "universe-walk-forward-evidence-v1",
+            "available_evaluable_sessions": validation.get("available_evaluable_sessions"),
+            "required_evaluable_sessions": validation.get("required_evaluable_sessions"),
+            "history_start_date": audit.get("history_start_date"),
+            "history_end_date": audit.get("latest_observation"),
+            "ranking_admissible": False,
+            "failed_checks": ["full_history_walk_forward_unavailable"],
+        }
+    admitted_tests = [
+        fold.get("test", {}) for fold in validation.get("folds", [])
+        if fold.get("point_in_time_universe", {}).get("ranking_admissible")
+        and fold.get("test", {}).get("status") == "ready"
+    ]
+
+    def values(name: str) -> list[float]:
+        return [float(period[name]) for period in admitted_tests if period.get(name) is not None]
+
+    def median_value(name: str) -> float | None:
+        observed = values(name)
+        return _round(median(observed)) if observed else None
+
+    admission = validation.get("ranking_admission") or {}
+    statistical = validation.get("out_of_sample_statistical_evidence") or {}
+    metrics = dict(admission.get("metrics") or {})
+    metrics.update({
+        "median_excess_return_pct": median_value("excess_return_pct"),
+        "median_exposure_pct": median_value("exposure_pct"),
+        "median_cost_drag_pct": median_value("estimated_cost_drag_pct"),
+        "completed_sells": sum(int(period.get("executed_sells") or 0) for period in admitted_tests),
+        "evaluated_test_sessions": sum(int(period.get("evaluated_sessions") or 0) for period in admitted_tests),
+    })
+    return {
+        "status": "ready",
+        "contract_version": "universe-walk-forward-evidence-v1",
+        "history_start_date": audit.get("history_start_date"),
+        "history_end_date": audit.get("latest_observation"),
+        "fold_count": validation.get("fold_count"),
+        "point_in_time_coverage": validation.get("point_in_time_coverage"),
+        "ranking_admissible": bool(admission.get("ranking_admissible")),
+        "failed_checks": list(admission.get("failed_checks") or []),
+        "metrics": metrics,
+        "net_trade_edge_p_value": statistical.get("net_trade_edge_p_value"),
+    }
+
+
+def _universe_oos_evidence_map(
+    market_db: Path,
+    engine: str,
+    series_function: Any,
+    series_arguments: tuple[Any, ...],
+    required_observations: int,
+) -> dict[str, dict[str, Any]]:
+    stat = market_db.stat()
+    cache_key = f"universe-oos-v1:{stat.st_mtime_ns}:{stat.st_size}:{engine}:{series_arguments}:{required_observations}"
+    with _UNIVERSE_OOS_LOCK:
+        cached = _UNIVERSE_OOS_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+    connection = _connect(market_db)
+    evidence: dict[str, dict[str, Any]] = {}
+    dated_universe_cache: dict[str, dict[str, Any]] = {}
+    try:
+        reference_context = _backtest_reference_context(connection)
+        instruments = connection.execute(
+            "SELECT instrument_id FROM instruments WHERE kind='stock' ORDER BY instrument_id"
+        ).fetchall()
+        for instrument in instruments:
+            instrument_id = instrument["instrument_id"]
+            symbol = instrument_id.split(":", 1)[-1]
+            rows, audit = _quality_checked_backtest_series(
+                connection, instrument_id, required_observations, reference_context, "full"
+            )
+            if audit.get("status") != "ready":
+                evidence[symbol] = {
+                    "status": "full_history_quality_gated",
+                    "contract_version": "universe-walk-forward-evidence-v1",
+                    "ranking_admissible": False,
+                    "failed_checks": list(audit.get("blocking_gates") or ["full_history_data_quality"]),
+                    "history_start_date": audit.get("history_start_date"),
+                    "history_end_date": audit.get("latest_observation"),
+                }
+                continue
+            validation = _rolling_walk_forward_validation(
+                rows, series_function, series_arguments, required_observations
+            )
+            validation = _attach_walk_forward_universe_gates(
+                validation, market_db, symbol=symbol, universe_cache=dated_universe_cache
+            )
+            evidence[symbol] = _compact_walk_forward_evidence(validation, audit)
+    finally:
+        connection.close()
+    with _UNIVERSE_OOS_LOCK:
+        _UNIVERSE_OOS_CACHE[cache_key] = evidence
+        _UNIVERSE_OOS_LATEST[engine] = {
+            "database_version": f"{stat.st_mtime_ns}:{stat.st_size}",
+            "cache_key": cache_key,
+            "evidence": evidence,
+        }
+        if len(_UNIVERSE_OOS_CACHE) > 20:
+            oldest_key = next(iter(_UNIVERSE_OOS_CACHE))
+            _UNIVERSE_OOS_CACHE.pop(oldest_key, None)
+    return evidence
+
+
+def _attach_oos_evidence_rankings(
+    results: list[dict[str, Any]],
+    oos_evidence: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    hypotheses = []
+    for row in results:
+        evidence = oos_evidence.get(str(row.get("symbol") or ""), {})
+        probability = evidence.get("net_trade_edge_p_value")
+        if evidence.get("status") == "ready" and probability is not None:
+            hypotheses.append({
+                "status": "ready",
+                "symbol": row.get("symbol"),
+                "net_trade_edge_p_value": probability,
+            })
+    oos_fdr = _attach_benjamini_hochberg_fdr(hypotheses)
+    q_values = {row["symbol"]: row.get("net_trade_edge_q_value") for row in hypotheses}
+    weights = {
+        "oos_net_profit_factor": 20.0,
+        "oos_net_trade_edge": 15.0,
+        "oos_trade_sample": 10.0,
+        "oos_adjusted_confidence": 15.0,
+        "oos_drawdown_control": 10.0,
+        "oos_excess_return": 10.0,
+        "oos_exposure_quality": 5.0,
+        "oos_turnover_efficiency": 5.0,
+        "oos_cost_efficiency": 5.0,
+        "period_stability": 5.0,
+    }
+    admitted = 0
+    for row in results:
+        symbol = str(row.get("symbol") or "")
+        evidence = oos_evidence.get(symbol, {})
+        row["oos_evidence"] = evidence
+        metrics = evidence.get("metrics") or {}
+        q_value = q_values.get(symbol)
+        if row.get("status") != "ready" or evidence.get("status") != "ready":
+            failed = list(evidence.get("failed_checks") or ["full_history_walk_forward_unavailable"])
+            row["evidence_ranking"] = {
+                "contract_version": "full-history-oos-evidence-ranking-v2",
+                "status": "gated", "ranking_admissible": False,
+                "score": None, "diagnostic_score": None,
+                "failed_checks": failed,
+                "oos_evidence_status": evidence.get("status") or "unavailable",
+            }
+            continue
+        profit_factor = float(metrics.get("median_net_profit_factor") or 0.0)
+        edge = float(metrics.get("median_net_trade_expectancy_pct") or 0.0)
+        trades = int(metrics.get("completed_trades") or 0)
+        drawdown = float(metrics.get("worst_net_drawdown_pct") or -100.0)
+        excess = float(metrics.get("median_excess_return_pct") or 0.0)
+        exposure = float(metrics.get("median_exposure_pct") or 0.0)
+        positive_ratio = float(metrics.get("positive_fold_ratio") or 0.0)
+        completed_sells = int(metrics.get("completed_sells") or 0)
+        evaluated_sessions = int(metrics.get("evaluated_test_sessions") or 0)
+        turnover_rate = completed_sells / max(1.0, evaluated_sessions / 252.0)
+        cost_drag = max(0.0, float(metrics.get("median_cost_drag_pct") or 0.0))
+        components = {
+            "oos_net_profit_factor": weights["oos_net_profit_factor"] * _clamp_unit((profit_factor - 1.0) / 1.5),
+            "oos_net_trade_edge": weights["oos_net_trade_edge"] * _clamp_unit(edge / 5.0),
+            "oos_trade_sample": weights["oos_trade_sample"] * _clamp_unit(trades / 25.0),
+            "oos_adjusted_confidence": weights["oos_adjusted_confidence"] * _clamp_unit((0.10 - float(q_value)) / 0.10) if q_value is not None else 0.0,
+            "oos_drawdown_control": weights["oos_drawdown_control"] * _clamp_unit((drawdown + 30.0) / 30.0),
+            "oos_excess_return": weights["oos_excess_return"] * _clamp_unit((excess + 10.0) / 30.0),
+            "oos_exposure_quality": weights["oos_exposure_quality"] * _clamp_unit(1.0 - abs(exposure - 50.0) / 50.0),
+            "oos_turnover_efficiency": weights["oos_turnover_efficiency"] * _clamp_unit(1.0 - turnover_rate / 20.0),
+            "oos_cost_efficiency": weights["oos_cost_efficiency"] * _clamp_unit(1.0 - cost_drag / 10.0),
+            "period_stability": weights["period_stability"] * _clamp_unit(positive_ratio),
+        }
+        checks = {
+            "minimum_admitted_test_folds": int(metrics.get("admitted_test_folds") or 0) >= 3,
+            "minimum_completed_trades": trades >= 15,
+            "positive_fold_ratio": positive_ratio >= 0.60,
+            "net_profit_factor": profit_factor >= 1.10,
+            "positive_net_trade_edge": edge > 0,
+            "oos_within_strategy_fdr": q_value is not None and float(q_value) <= 0.05,
+            "drawdown_limit": drawdown >= -25.0,
+            "positive_excess_return": excess > 0,
+        }
+        failed = [name for name, passed in checks.items() if not passed]
+        diagnostic = sum(components.values())
+        ranking_admissible = not failed
+        admitted += int(ranking_admissible)
+        row["evidence_ranking"] = {
+            "contract_version": "full-history-oos-evidence-ranking-v2",
+            "status": "admitted" if ranking_admissible else "gated",
+            "ranking_admissible": ranking_admissible,
+            "score": _round(diagnostic, 2) if ranking_admissible else None,
+            "diagnostic_score": _round(diagnostic, 2),
+            "components": {name: _round(value, 2) for name, value in components.items()},
+            "weights": weights,
+            "checks": checks,
+            "failed_checks": failed,
+            "oos_net_trade_edge_p_value": evidence.get("net_trade_edge_p_value"),
+            "oos_net_trade_edge_q_value": q_value,
+            "oos_metrics": metrics,
+            "decision_boundary": "Only point-in-time-admitted, full-history walk-forward evidence can receive a ranking score.",
+        }
+    return {
+        "contract_version": "full-history-oos-evidence-ranking-v2",
+        "status": "ready",
+        "ranking_admitted": admitted,
+        "gated": len(results) - admitted,
+        "weights": weights,
+        "oos_multiple_testing": oos_fdr,
+        "point_in_time_membership_enforced_per_fold": True,
+    }
+
+
 EQUITY_DELIVERY_COST_SCHEDULE = {
     "schedule_version": "zerodha-nse-equity-delivery-2026-03-v1",
     "effective_from": "2026-03-01",
@@ -3050,6 +6461,7 @@ def moving_average_crossover(
     fast_window: int = 20,
     slow_window: int = 50,
     history_mode: str = "comparison",
+    include_oos_ranking: bool = True,
 ) -> dict[str, Any]:
     """Run the background SMA crossover research engine for one or all stocks."""
     if fast_window < 2 or slow_window <= fast_window or slow_window > 250:
@@ -3088,6 +6500,7 @@ def moving_average_crossover(
                             (fast_window, slow_window), slow_window + 1,
                         ),
                         market_db,
+                        symbol=requested_symbol,
                     )
             else:
                 result = {"status": "data_quality_gated", "observations": audit["stored_observations"],
@@ -3111,6 +6524,13 @@ def moving_average_crossover(
         _attach_benjamini_hochberg_fdr(results) if not requested_symbol else
         {"contract_version": "benjamini-hochberg-fdr-v1", "status": "not_applicable_single_stock"}
     )
+    evidence_ranking = _attach_comparison_evidence_rankings(results)
+    if not requested_symbol and include_oos_ranking:
+        oos_evidence = _universe_oos_evidence_map(
+            market_db, "moving_average_crossover", _moving_average_crossover_series,
+            (fast_window, slow_window), slow_window + 1,
+        )
+        evidence_ranking = _attach_oos_evidence_rankings(results, oos_evidence)
     invested = sum(row.get("current_executed_position") == "invested" for row in ready)
     outperforming = sum((row.get("excess_return_pct") or 0) > 0 for row in ready)
     return {
@@ -3130,6 +6550,7 @@ def moving_average_crossover(
         },
         "scope": "single_stock" if requested_symbol else "stored_stock_universe",
         "multiple_testing": multiple_testing,
+        "evidence_ranking": evidence_ranking,
         "as_of_date": max((row.get("as_of_date") or "" for row in ready), default=None) or None,
         "data_quality_contract": {
             "common_as_of_date": reference_context.get("common_as_of_date"),
@@ -3243,6 +6664,7 @@ def donchian_breakout(
     entry_window: int = 55,
     exit_window: int = 20,
     history_mode: str = "comparison",
+    include_oos_ranking: bool = True,
 ) -> dict[str, Any]:
     """Run the long-only Donchian breakout research engine for one or all stocks."""
     if exit_window < 2 or entry_window <= exit_window or entry_window > 250:
@@ -3282,6 +6704,7 @@ def donchian_breakout(
                             (entry_window, exit_window), required_observations,
                         ),
                         market_db,
+                        symbol=requested_symbol,
                     )
             else:
                 result = {"status": "data_quality_gated", "observations": audit["stored_observations"],
@@ -3305,6 +6728,13 @@ def donchian_breakout(
         _attach_benjamini_hochberg_fdr(results) if not requested_symbol else
         {"contract_version": "benjamini-hochberg-fdr-v1", "status": "not_applicable_single_stock"}
     )
+    evidence_ranking = _attach_comparison_evidence_rankings(results)
+    if not requested_symbol and include_oos_ranking:
+        oos_evidence = _universe_oos_evidence_map(
+            market_db, "donchian_breakout", _donchian_breakout_series,
+            (entry_window, exit_window), required_observations,
+        )
+        evidence_ranking = _attach_oos_evidence_rankings(results, oos_evidence)
     invested = sum(row.get("current_executed_position") == "invested" for row in ready)
     outperforming = sum((row.get("excess_return_pct") or 0) > 0 for row in ready)
     return {
@@ -3325,6 +6755,7 @@ def donchian_breakout(
         },
         "scope": "single_stock" if requested_symbol else "stored_stock_universe",
         "multiple_testing": multiple_testing,
+        "evidence_ranking": evidence_ranking,
         "as_of_date": max((row.get("as_of_date") or "" for row in ready), default=None) or None,
         "data_quality_contract": {
             "common_as_of_date": reference_context.get("common_as_of_date"),
@@ -3404,8 +6835,12 @@ def _long_cash_metrics(
     executed_position = 0
     entry_price: float | None = None
     entry_cost_inr: float | None = None
+    entry_index: int | None = None
+    entry_signal_date: str | None = None
+    entry_execution_date: str | None = None
     completed_trade_returns: list[float] = []
     net_completed_trade_returns: list[float] = []
+    completed_trades: list[dict[str, Any]] = []
     cost_breakdown = {key: 0.0 for key in (
         "brokerage", "stt", "exchange_transaction", "nse_ipft", "sebi", "gst",
         "stamp_duty", "dp_charge", "slippage", "market_impact", "total",
@@ -3446,15 +6881,47 @@ def _long_cash_metrics(
             if executed_position:
                 entry_price = current_open
                 entry_cost_inr = _equity_delivery_side_charges(capital_inr, "buy", cost_assumptions)["total"]
+                entry_index = index
+                entry_signal_date = str(signal_event.get("signal_date")) if signal_event else dates[index - 1]
+                entry_execution_date = dates[index]
                 executed_buys += 1
             elif entry_price is not None:
-                completed_trade_returns.append(100 * (current_open / entry_price - 1.0))
+                gross_trade_return = 100 * (current_open / entry_price - 1.0)
+                completed_trade_returns.append(gross_trade_return)
                 entry_net_capital = capital_inr - float(entry_cost_inr or 0.0)
                 exit_turnover = entry_net_capital * current_open / entry_price
                 exit_cost = _equity_delivery_side_charges(exit_turnover, "sell", cost_assumptions)["total"]
-                net_completed_trade_returns.append(100 * ((exit_turnover - exit_cost) / capital_inr - 1.0))
+                net_trade_return = 100 * ((exit_turnover - exit_cost) / capital_inr - 1.0)
+                net_completed_trade_returns.append(net_trade_return)
+                holding_rows = rows[entry_index:index + 1] if entry_index is not None else []
+                maximum_favourable = (
+                    100 * (max(float(_price_row_value(row, "high", _price_row_value(row, "close"))) for row in holding_rows) / entry_price - 1.0)
+                    if holding_rows else None
+                )
+                maximum_adverse = (
+                    100 * (min(float(_price_row_value(row, "low", _price_row_value(row, "close"))) for row in holding_rows) / entry_price - 1.0)
+                    if holding_rows else None
+                )
+                completed_trades.append({
+                    "entry_signal_date": entry_signal_date,
+                    "entry_execution_date": entry_execution_date,
+                    "exit_signal_date": str(signal_event.get("signal_date")) if signal_event else dates[index - 1],
+                    "exit_execution_date": dates[index],
+                    "holding_sessions": (index - entry_index) if entry_index is not None else None,
+                    "gross_return_pct": _round(gross_trade_return, 6),
+                    "net_return_pct": _round(net_trade_return, 6),
+                    "maximum_favourable_excursion_pct": _round(maximum_favourable, 6),
+                    "maximum_adverse_excursion_pct": _round(maximum_adverse, 6),
+                    "move_capture_ratio": (
+                        _round(gross_trade_return / maximum_favourable, 6)
+                        if maximum_favourable is not None and maximum_favourable > 0 else None
+                    ),
+                })
                 entry_price = None
                 entry_cost_inr = None
+                entry_index = None
+                entry_signal_date = None
+                entry_execution_date = None
                 executed_sells += 1
         elif target_position != executed_position:
             rejected_executions += 1
@@ -3567,6 +7034,7 @@ def _long_cash_metrics(
         "trade_edge_test": "two_sided_one_sample_t_test_vs_zero",
         "_completed_trade_returns": completed_trade_returns,
         "_net_completed_trade_returns": net_completed_trade_returns,
+        "_completed_trades": completed_trades,
         "executed_events": sum(event["execution_status"] == "executed" for event in execution_events),
         "rejected_execution_events": rejected_executions,
         "pending_execution_events": len(pending_events),
@@ -3881,6 +7349,7 @@ def _chronological_holdout_validation(
         "net_annualised_return_pct", "net_profit_factor",
         "net_trade_expectancy_pct", "net_trade_edge_p_value",
         "net_maximum_drawdown_pct", "excess_return_pct", "exposure_pct",
+        "estimated_cost_drag_pct", "executed_sells",
     )
     periods = []
     for label, evaluation_start, evaluation_end in boundaries:
@@ -3945,6 +7414,7 @@ def _rolling_walk_forward_validation(
         "net_annualised_return_pct", "net_profit_factor",
         "net_trade_expectancy_pct", "net_trade_edge_p_value",
         "net_maximum_drawdown_pct", "excess_return_pct", "exposure_pct",
+        "estimated_cost_drag_pct", "executed_sells",
     )
 
     def evaluate_period(start: int, end: int) -> dict[str, Any]:
@@ -4021,6 +7491,8 @@ def _attach_walk_forward_universe_gates(
     validation: dict[str, Any],
     market_db: Path,
     snapshot_db: Path = DEFAULT_SNAPSHOT_DB,
+    symbol: str | None = None,
+    universe_cache: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if validation.get("status") != "ready":
         return validation
@@ -4036,15 +7508,24 @@ def _attach_walk_forward_universe_gates(
             }
             continue
         try:
-            universe = point_in_time_universe_contract(
-                market_db=market_db, snapshot_db=snapshot_db, as_of_date=test_end.isoformat()
-            )
+            cache_key = test_end.isoformat()
+            universe = (universe_cache or {}).get(cache_key)
+            if universe is None:
+                universe = point_in_time_universe_contract(
+                    market_db=market_db, snapshot_db=snapshot_db, as_of_date=cache_key
+                )
+                if universe_cache is not None:
+                    universe_cache[cache_key] = universe
+            member_symbols = {str(member.get("symbol") or "").upper() for member in universe.get("members", [])}
+            symbol_member = not symbol or symbol.upper() in member_symbols
             fold["point_in_time_universe"] = {
                 "status": universe.get("membership_status"),
-                "ranking_admissible": bool(universe.get("ranking_admissible")),
+                "ranking_admissible": bool(universe.get("ranking_admissible") and symbol_member),
                 "as_of_date": test_end.isoformat(),
                 "member_count": universe.get("member_count"),
                 "classification_status": universe.get("classification_status"),
+                "symbol": symbol,
+                "symbol_member": symbol_member,
             }
         except ValueError as error:
             fold["point_in_time_universe"] = {
@@ -4147,6 +7628,7 @@ def _run_signal_backtest(
     market_db: Path, symbol: str | None, series_function: Any, series_arguments: tuple[Any, ...],
     engine: str, contract_version: str, strategy: dict[str, Any], required_observations: int,
     history_mode: str = "comparison",
+    include_oos_ranking: bool = True,
 ) -> dict[str, Any]:
     requested_symbol = (symbol or "").strip().upper()
     connection = _connect(market_db)
@@ -4178,6 +7660,7 @@ def _run_signal_backtest(
                             prepared_rows, series_function, series_arguments, required_observations
                         ),
                         market_db,
+                        symbol=requested_symbol,
                     )
             else:
                 result = {
@@ -4203,6 +7686,12 @@ def _run_signal_backtest(
         _attach_benjamini_hochberg_fdr(results) if not requested_symbol else
         {"contract_version": "benjamini-hochberg-fdr-v1", "status": "not_applicable_single_stock"}
     )
+    evidence_ranking = _attach_comparison_evidence_rankings(results)
+    if not requested_symbol and include_oos_ranking:
+        oos_evidence = _universe_oos_evidence_map(
+            market_db, engine, series_function, series_arguments, required_observations
+        )
+        evidence_ranking = _attach_oos_evidence_rankings(results, oos_evidence)
     invested = sum(row.get("current_executed_position") == "invested" for row in ready)
     strategy_contract = dict(strategy)
     strategy_contract.update({
@@ -4216,6 +7705,7 @@ def _run_signal_backtest(
         "ok": True, "contract_version": contract_version, "engine": engine, "strategy": strategy_contract,
         "scope": "single_stock" if requested_symbol else "stored_stock_universe",
         "multiple_testing": multiple_testing,
+        "evidence_ranking": evidence_ranking,
         "as_of_date": max((row.get("as_of_date") or "" for row in ready), default=None) or None,
         "data_quality_contract": {
             "common_as_of_date": reference_context.get("common_as_of_date"),
@@ -4254,28 +7744,29 @@ def _run_signal_backtest(
     }
 
 
-def ema_crossover(market_db: Path = DEFAULT_MARKET_DB, symbol: str | None = None, fast_window: int = 20, slow_window: int = 50, history_mode: str = "comparison") -> dict[str, Any]:
+def ema_crossover(market_db: Path = DEFAULT_MARKET_DB, symbol: str | None = None, fast_window: int = 20, slow_window: int = 50, history_mode: str = "comparison", include_oos_ranking: bool = True) -> dict[str, Any]:
     if fast_window < 2 or slow_window <= fast_window or slow_window > 250:
         raise ValueError("invalid_ema_windows")
     return _run_signal_backtest(market_db, symbol, _ema_crossover_series, (fast_window, slow_window), "ema_crossover",
                                 "ema-crossover-backtest-v8", {"fast_window": fast_window, "slow_window": slow_window,
                                 "average_type": "exponential", "positioning": "long_or_cash",
-                                "return_attribution": "completed_close_signal_executed_next_session_open"}, slow_window + 1, history_mode)
+                                "return_attribution": "completed_close_signal_executed_next_session_open"}, slow_window + 1, history_mode, include_oos_ranking)
 
 
-def time_series_momentum(market_db: Path = DEFAULT_MARKET_DB, symbol: str | None = None, lookback: int = 63, history_mode: str = "comparison") -> dict[str, Any]:
+def time_series_momentum(market_db: Path = DEFAULT_MARKET_DB, symbol: str | None = None, lookback: int = 63, history_mode: str = "comparison", include_oos_ranking: bool = True) -> dict[str, Any]:
     if lookback < 5 or lookback > 250:
         raise ValueError("invalid_momentum_lookback")
     return _run_signal_backtest(market_db, symbol, _time_series_momentum_series, (lookback,), "time_series_momentum",
                                 "time-series-momentum-backtest-v8", {"lookback": lookback, "positioning": "long_or_cash",
                                 "entry_rule": "lookback_return_positive", "exit_rule": "lookback_return_non_positive",
-                                "return_attribution": "completed_close_signal_executed_next_session_open"}, lookback + 2, history_mode)
+                                "return_attribution": "completed_close_signal_executed_next_session_open"}, lookback + 2, history_mode, include_oos_ranking)
 
 
 def triple_sma_alignment(
     market_db: Path = DEFAULT_MARKET_DB, symbol: str | None = None,
     fast_window: int = 20, medium_window: int = 50, slow_window: int = 200,
     history_mode: str = "comparison",
+    include_oos_ranking: bool = True,
 ) -> dict[str, Any]:
     if fast_window < 2 or medium_window <= fast_window or slow_window <= medium_window or slow_window > 300:
         raise ValueError("invalid_triple_sma_windows")
@@ -4284,13 +7775,14 @@ def triple_sma_alignment(
                                 "triple-sma-alignment-backtest-v8", {"fast_window": fast_window, "medium_window": medium_window,
                                 "slow_window": slow_window, "average_type": "simple", "positioning": "long_or_cash",
                                 "entry_rule": "fast_above_medium_above_slow", "exit_rule": "alignment_breaks",
-                                "return_attribution": "completed_close_signal_executed_next_session_open"}, slow_window + 1, history_mode)
+                                "return_attribution": "completed_close_signal_executed_next_session_open"}, slow_window + 1, history_mode, include_oos_ranking)
 
 
 def rsi_mean_reversion(
     market_db: Path = DEFAULT_MARKET_DB, symbol: str | None = None,
     period: int = 2, entry_rsi: float = 10.0, exit_rsi: float = 70.0,
     history_mode: str = "comparison",
+    include_oos_ranking: bool = True,
 ) -> dict[str, Any]:
     if period < 2 or period > 50 or entry_rsi <= 0 or exit_rsi >= 100 or entry_rsi >= exit_rsi:
         raise ValueError("invalid_rsi_mean_reversion_parameters")
@@ -4299,12 +7791,13 @@ def rsi_mean_reversion(
                                 "rsi-mean-reversion-backtest-v8", {"period": period, "entry_rsi": entry_rsi,
                                 "exit_rsi": exit_rsi, "positioning": "long_or_cash",
                                 "entry_rule": "rsi_at_or_below_entry", "exit_rule": "rsi_at_or_above_exit",
-                                "return_attribution": "completed_close_signal_executed_next_session_open"}, period + 2, history_mode)
+                                "return_attribution": "completed_close_signal_executed_next_session_open"}, period + 2, history_mode, include_oos_ranking)
 
 
 def bollinger_mean_reversion(
     market_db: Path = DEFAULT_MARKET_DB, symbol: str | None = None,
     window: int = 20, deviations: float = 2.0, history_mode: str = "comparison",
+    include_oos_ranking: bool = True,
 ) -> dict[str, Any]:
     if window < 5 or window > 250 or deviations <= 0 or deviations > 5:
         raise ValueError("invalid_bollinger_parameters")
@@ -4313,13 +7806,14 @@ def bollinger_mean_reversion(
                                 "bollinger-mean-reversion-backtest-v8", {"window": window, "deviations": deviations,
                                 "positioning": "long_or_cash", "entry_rule": "close_below_lower_band",
                                 "exit_rule": "close_at_or_above_middle_band",
-                                "return_attribution": "completed_close_signal_executed_next_session_open"}, window + 1, history_mode)
+                                "return_attribution": "completed_close_signal_executed_next_session_open"}, window + 1, history_mode, include_oos_ranking)
 
 
 def zscore_mean_reversion(
     market_db: Path = DEFAULT_MARKET_DB, symbol: str | None = None,
     window: int = 10, entry_z: float = -1.5, exit_z: float = 0.0,
     history_mode: str = "comparison",
+    include_oos_ranking: bool = True,
 ) -> dict[str, Any]:
     if window < 5 or window > 250 or entry_z >= exit_z or entry_z >= 0:
         raise ValueError("invalid_zscore_parameters")
@@ -4328,12 +7822,13 @@ def zscore_mean_reversion(
                                 "zscore-mean-reversion-backtest-v8", {"window": window, "entry_z": entry_z,
                                 "exit_z": exit_z, "positioning": "long_or_cash",
                                 "entry_rule": "zscore_at_or_below_entry", "exit_rule": "zscore_at_or_above_exit",
-                                "return_attribution": "completed_close_signal_executed_next_session_open"}, window + 1, history_mode)
+                                "return_attribution": "completed_close_signal_executed_next_session_open"}, window + 1, history_mode, include_oos_ranking)
 
 
 def pullback_uptrend(
     market_db: Path = DEFAULT_MARKET_DB, symbol: str | None = None,
     pullback_window: int = 5, trend_window: int = 200, history_mode: str = "comparison",
+    include_oos_ranking: bool = True,
 ) -> dict[str, Any]:
     if pullback_window < 2 or trend_window <= pullback_window or trend_window > 300:
         raise ValueError("invalid_pullback_uptrend_windows")
@@ -4343,12 +7838,13 @@ def pullback_uptrend(
                                 "trend_window": trend_window, "positioning": "long_or_cash",
                                 "entry_rule": "close_below_pullback_sma_and_above_trend_sma",
                                 "exit_rule": "close_recovers_pullback_sma_or_breaks_trend_sma",
-                                "return_attribution": "completed_close_signal_executed_next_session_open"}, trend_window + 1, history_mode)
+                                "return_attribution": "completed_close_signal_executed_next_session_open"}, trend_window + 1, history_mode, include_oos_ranking)
 
 
 def selloff_recovery(
     market_db: Path = DEFAULT_MARKET_DB, symbol: str | None = None,
     down_sessions: int = 3, exit_window: int = 5, history_mode: str = "comparison",
+    include_oos_ranking: bool = True,
 ) -> dict[str, Any]:
     if down_sessions < 2 or down_sessions > 10 or exit_window < 3 or exit_window > 50:
         raise ValueError("invalid_selloff_recovery_parameters")
@@ -4359,11 +7855,54 @@ def selloff_recovery(
                                 "entry_rule": "consecutive_down_closes_below_exit_sma",
                                 "exit_rule": "close_at_or_above_exit_sma",
                                 "return_attribution": "completed_close_signal_executed_next_session_open"},
-                                max(down_sessions, exit_window - 1) + 2, history_mode)
+                                max(down_sessions, exit_window - 1) + 2, history_mode, include_oos_ranking)
 
 
 _CROSS_STRATEGY_FDR_LOCK = threading.Lock()
-_CROSS_STRATEGY_FDR_CACHE: dict[str, Any] = {}
+_OOS_PRECOMPUTE_STATE: dict[str, Any] = {
+    "status": "idle", "database_version": None, "completed_engines": [], "current_engine": None, "errors": {},
+}
+
+
+def _oos_strategy_runners() -> tuple[tuple[str, Any], ...]:
+    return (
+        ("moving_average_crossover", moving_average_crossover),
+        ("donchian_breakout", donchian_breakout),
+        ("ema_crossover", ema_crossover),
+        ("time_series_momentum", time_series_momentum),
+        ("triple_sma_alignment", triple_sma_alignment),
+        ("rsi_mean_reversion", rsi_mean_reversion),
+        ("bollinger_mean_reversion", bollinger_mean_reversion),
+        ("zscore_mean_reversion", zscore_mean_reversion),
+        ("pullback_uptrend", pullback_uptrend),
+        ("selloff_recovery", selloff_recovery),
+    )
+
+
+def _precompute_missing_oos_strategies(market_db: Path, database_version: str) -> None:
+    errors: dict[str, str] = {}
+    for engine, runner in _oos_strategy_runners():
+        with _UNIVERSE_OOS_LOCK:
+            cached = _UNIVERSE_OOS_LATEST.get(engine)
+        if cached and cached.get("database_version") == database_version:
+            continue
+        with _CROSS_STRATEGY_FDR_LOCK:
+            _OOS_PRECOMPUTE_STATE["current_engine"] = engine
+        try:
+            runner(market_db)
+        except Exception as error:  # background progress must survive one failed family
+            errors[engine] = str(error)
+        with _UNIVERSE_OOS_LOCK:
+            completed = sorted(
+                name for name, item in _UNIVERSE_OOS_LATEST.items()
+                if item.get("database_version") == database_version
+            )
+        with _CROSS_STRATEGY_FDR_LOCK:
+            _OOS_PRECOMPUTE_STATE["completed_engines"] = completed
+            _OOS_PRECOMPUTE_STATE["errors"] = dict(errors)
+    with _CROSS_STRATEGY_FDR_LOCK:
+        _OOS_PRECOMPUTE_STATE["status"] = "complete" if not errors else "complete_with_errors"
+        _OOS_PRECOMPUTE_STATE["current_engine"] = None
 
 
 def _cross_strategy_fdr_from_payloads(payloads: list[dict[str, Any]], alpha: float = 0.05) -> dict[str, Any]:
@@ -4371,7 +7910,8 @@ def _cross_strategy_fdr_from_payloads(payloads: list[dict[str, Any]], alpha: flo
     for payload in payloads:
         engine = str(payload.get("engine") or "unknown")
         for row in payload.get("results", []):
-            probability = row.get("net_trade_edge_p_value")
+            base_ranking = row.get("evidence_ranking") or {}
+            probability = base_ranking.get("oos_net_trade_edge_p_value")
             if row.get("status") != "ready" or probability is None:
                 continue
             hypotheses.append({
@@ -4379,14 +7919,30 @@ def _cross_strategy_fdr_from_payloads(payloads: list[dict[str, Any]], alpha: flo
                 "engine": engine,
                 "symbol": row.get("symbol"),
                 "net_trade_edge_p_value": probability,
+                "base_evidence_ranking": base_ranking,
             })
     contract = _attach_benjamini_hochberg_fdr(hypotheses, alpha)
     by_engine: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
     for row in hypotheses:
+        base_ranking = row.get("base_evidence_ranking") or {}
+        global_fdr_passed = bool(row["net_trade_edge_q_value"] is not None and row["net_trade_edge_q_value"] <= alpha)
+        ranking_admissible = bool(base_ranking.get("ranking_admissible") and global_fdr_passed)
+        failed_checks = list(base_ranking.get("failed_checks") or [])
+        if not global_fdr_passed:
+            failed_checks.append("all_strategy_fdr")
         by_engine[row["engine"]][str(row["symbol"])] = {
             "raw_p_value": row["net_trade_edge_p_value"],
             "cross_strategy_q_value": row["net_trade_edge_q_value"],
             "status": row["multiple_testing_status"],
+            "evidence_ranking": {
+                **base_ranking,
+                "contract_version": "cross-strategy-evidence-ranking-v1",
+                "ranking_admissible": ranking_admissible,
+                "status": "admitted" if ranking_admissible else "gated",
+                "score": base_ranking.get("diagnostic_score") if ranking_admissible else None,
+                "failed_checks": failed_checks,
+                "global_fdr_passed": global_fdr_passed,
+            },
         }
     strategy_counts = {
         engine: {
@@ -4397,42 +7953,117 @@ def _cross_strategy_fdr_from_payloads(payloads: list[dict[str, Any]], alpha: flo
     }
     return {
         "ok": True,
-        "contract_version": "cross-strategy-benjamini-hochberg-fdr-v1",
-        "family": "all_default_strategy_stock_pairs",
+        "contract_version": "cross-strategy-oos-benjamini-hochberg-fdr-v2",
+        "family": "all_default_strategy_stock_pairs_full_history_oos",
         "alpha": alpha,
         "tested_hypotheses": contract["tested_hypotheses"],
         "raw_p_below_alpha": contract["raw_p_below_alpha"],
         "fdr_q_below_alpha": contract["fdr_q_below_alpha"],
+        "ranking_admitted": sum(
+            item["evidence_ranking"]["ranking_admissible"]
+            for rows in by_engine.values() for item in rows.values()
+        ),
         "strategy_counts": strategy_counts,
         "by_engine": dict(by_engine),
-        "interpretation": "Controls the expected false-discovery proportion across all default stock-by-strategy comparisons in one combined family.",
+        "interpretation": "Controls the expected false-discovery proportion across all full-history, point-in-time-admitted default stock-by-strategy OOS tests in one combined family.",
     }
 
 
-def cross_strategy_multiple_testing(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
-    """Compute and cache the combined stock-by-strategy FDR contract."""
+def cross_strategy_multiple_testing(
+    market_db: Path = DEFAULT_MARKET_DB,
+    start_background: bool = False,
+) -> dict[str, Any]:
+    """Return the incremental full-history OOS family.
+
+    Missing strategy families are deliberately not started by ordinary page
+    reads. Computing all ten full-history universes in a Python thread can
+    starve the request-serving process and make cheap dashboard contracts look
+    hung. Individual strategy endpoints populate this cache on demand; an
+    explicit maintenance request may still opt into the complete build.
+    """
     stat = market_db.stat()
-    cache_key = f"{stat.st_mtime_ns}:{stat.st_size}"
+    database_version = f"{stat.st_mtime_ns}:{stat.st_size}"
+    required_engines = [engine for engine, _runner in _oos_strategy_runners()]
+    with _UNIVERSE_OOS_LOCK:
+        available = {
+            engine: item for engine, item in _UNIVERSE_OOS_LATEST.items()
+            if item.get("database_version") == database_version
+        }
     with _CROSS_STRATEGY_FDR_LOCK:
-        cached = _CROSS_STRATEGY_FDR_CACHE.get(cache_key)
-        if cached is not None:
-            return cached
-        runners = (
-            moving_average_crossover, donchian_breakout, ema_crossover,
-            time_series_momentum, triple_sma_alignment, rsi_mean_reversion,
-            bollinger_mean_reversion, zscore_mean_reversion, pullback_uptrend,
-            selloff_recovery,
+        running_for_version = (
+            _OOS_PRECOMPUTE_STATE.get("status") == "running"
+            and _OOS_PRECOMPUTE_STATE.get("database_version") == database_version
         )
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = [executor.submit(runner, market_db) for runner in runners]
-            payloads = [future.result() for future in futures]
-        result = _cross_strategy_fdr_from_payloads(payloads)
-        result["database_version"] = cache_key
-        result["strategy_count"] = len(payloads)
-        result["as_of_date"] = max((payload.get("as_of_date") or "" for payload in payloads), default=None) or None
-        _CROSS_STRATEGY_FDR_CACHE.clear()
-        _CROSS_STRATEGY_FDR_CACHE[cache_key] = result
-        return result
+        if start_background and len(available) < len(required_engines) and not running_for_version:
+            _OOS_PRECOMPUTE_STATE.update({
+                "status": "running", "database_version": database_version,
+                "completed_engines": sorted(available), "current_engine": None, "errors": {},
+            })
+            threading.Thread(
+                target=_precompute_missing_oos_strategies,
+                args=(market_db, database_version),
+                name="workspace-oos-precompute", daemon=True,
+            ).start()
+        progress = dict(_OOS_PRECOMPUTE_STATE)
+
+    payloads = []
+    for engine, item in available.items():
+        payloads.append({
+            "engine": engine,
+            "results": [
+                {
+                    "status": "ready" if evidence.get("status") == "ready" else "gated",
+                    "symbol": symbol,
+                    "evidence_ranking": {
+                        "ranking_admissible": bool(evidence.get("ranking_admissible")),
+                        "diagnostic_score": None,
+                        "failed_checks": list(evidence.get("failed_checks") or []),
+                        "oos_net_trade_edge_p_value": evidence.get("net_trade_edge_p_value"),
+                    },
+                }
+                for symbol, evidence in item.get("evidence", {}).items()
+            ],
+        })
+    result = _cross_strategy_fdr_from_payloads(payloads)
+    coverage_complete = len(available) == len(required_engines)
+    if not coverage_complete:
+        for rows in result.get("by_engine", {}).values():
+            for item in rows.values():
+                item["cross_strategy_q_value"] = None
+                item["status"] = "pending_complete_strategy_family"
+                item["evidence_ranking"]["ranking_admissible"] = False
+                item["evidence_ranking"]["score"] = None
+                item["evidence_ranking"]["global_fdr_passed"] = False
+                item["evidence_ranking"]["failed_checks"] = list(dict.fromkeys(
+                    [*(item["evidence_ranking"].get("failed_checks") or []), "all_strategy_fdr"]
+                ))
+        result["fdr_q_below_alpha"] = 0
+        result["ranking_admitted"] = 0
+    connection = _connect(market_db)
+    try:
+        as_of_date = _backtest_reference_context(connection).get("common_as_of_date")
+    finally:
+        connection.close()
+    background_running = (
+        progress.get("status") == "running"
+        and progress.get("database_version") == database_version
+    )
+    result.update({
+        "status": (
+            "ready" if coverage_complete else
+            "building_oos_strategy_family" if background_running else
+            "incremental_oos_strategy_family"
+        ),
+        "database_version": database_version,
+        "strategy_count": len(available),
+        "required_strategy_count": len(required_engines),
+        "coverage_complete": coverage_complete,
+        "missing_engines": [engine for engine in required_engines if engine not in available],
+        "background_progress": progress,
+        "background_requested": bool(start_background),
+        "as_of_date": as_of_date,
+    })
+    return result
 
 
 def screener_local(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
