@@ -1,0 +1,172 @@
+{
+  "fixture_contract": "published-analytics-regression-fixture-v1",
+  "execution": {
+    "buy_turnover_inr": 50000,
+    "sell_turnover_inr": 55000
+  },
+  "trend": {
+    "start_date": "2026-01-01",
+    "fast_window": 3,
+    "slow_window": 5,
+    "closes": [10, 9, 8, 7, 6, 7, 8, 9, 10, 9, 8, 7, 6, 7, 8]
+  },
+  "regime": {
+    "repeat": 20,
+    "row": {
+      "session_date": "2026-11-13",
+      "close": 100.0,
+      "distance_sma50_pct": 4.0,
+      "distance_sma200_pct": 6.0,
+      "market_return_20d_pct": 5.0,
+      "market_distance_sma200_pct": 6.0,
+      "market_volatility_20d_pct": 16.0,
+      "market_breadth_50dma_pct": 65.0,
+      "market_breadth_200dma_pct": 60.0,
+      "ranking_admissible": true,
+      "source_dates": {"feature_session": "2026-11-13"}
+    }
+  },
+  "cross_strategy_payloads": [
+    {
+      "engine": "sma",
+      "results": [
+        {
+          "status": "ready",
+          "symbol": "AAA",
+          "evidence_ranking": {
+            "ranking_admissible": true,
+            "diagnostic_score": 72.5,
+            "oos_net_trade_edge_p_value": 0.01
+          }
+        },
+        {
+          "status": "ready",
+          "symbol": "BBB",
+          "evidence_ranking": {
+            "ranking_admissible": true,
+            "diagnostic_score": 68.0,
+            "oos_net_trade_edge_p_value": 0.04
+          }
+        }
+      ]
+    },
+    {
+      "engine": "ema",
+      "results": [
+        {
+          "status": "ready",
+          "symbol": "AAA",
+          "evidence_ranking": {
+            "ranking_admissible": true,
+            "diagnostic_score": 70.0,
+            "oos_net_trade_edge_p_value": 0.03
+          }
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "execution": {
+      "contract_version": "equity-delivery-cost-v1",
+      "buy_turnover_inr": 50000.0,
+      "sell_turnover_inr": 55000.0,
+      "total_cost_inr": 184.2676,
+      "total_cost_pct_of_gross_turnover": 0.175493
+    },
+    "trend": {
+      "status": "ready",
+      "current_signal": 0,
+      "current_fast_sma": 7.0,
+      "current_slow_sma": 7.2,
+      "current_spread_pct": -2.78,
+      "crossovers": 2,
+      "last_crossover": {
+        "signal_date": "2026-01-12",
+        "effective_from": "2026-01-13",
+        "type": "bearish_cross",
+        "new_signal": 0,
+        "close": 7.0,
+        "fast_sma": 8.0,
+        "slow_sma": 8.6
+      }
+    },
+    "regime": {
+      "contract_version": "market-regime-classification-v1",
+      "classification_status": "ready",
+      "ranking_admissible": true,
+      "regime_family": "bullish_trend",
+      "trend_direction": "up",
+      "trend_strength": "strong",
+      "range_state": "trend_expansion",
+      "volatility_state": "normal",
+      "breadth_state": "broad_positive",
+      "missing_inputs": []
+    },
+    "cross_strategy_fdr": {
+      "ok": true,
+      "contract_version": "cross-strategy-oos-benjamini-hochberg-fdr-v2",
+      "family": "all_default_strategy_stock_pairs_full_history_oos",
+      "alpha": 0.05,
+      "tested_hypotheses": 3,
+      "raw_p_below_alpha": 3,
+      "fdr_q_below_alpha": 3,
+      "ranking_admitted": 3,
+      "strategy_counts": {
+        "sma": {"tested_hypotheses": 2, "fdr_q_below_alpha": 2},
+        "ema": {"tested_hypotheses": 1, "fdr_q_below_alpha": 1}
+      },
+      "by_engine": {
+        "sma": {
+          "AAA": {
+            "raw_p_value": 0.01,
+            "cross_strategy_q_value": 0.03,
+            "status": "fdr_significant",
+            "evidence_ranking": {
+              "ranking_admissible": true,
+              "diagnostic_score": 72.5,
+              "oos_net_trade_edge_p_value": 0.01,
+              "contract_version": "cross-strategy-evidence-ranking-v1",
+              "status": "admitted",
+              "score": 72.5,
+              "failed_checks": [],
+              "global_fdr_passed": true
+            }
+          },
+          "BBB": {
+            "raw_p_value": 0.04,
+            "cross_strategy_q_value": 0.04,
+            "status": "fdr_significant",
+            "evidence_ranking": {
+              "ranking_admissible": true,
+              "diagnostic_score": 68.0,
+              "oos_net_trade_edge_p_value": 0.04,
+              "contract_version": "cross-strategy-evidence-ranking-v1",
+              "status": "admitted",
+              "score": 68.0,
+              "failed_checks": [],
+              "global_fdr_passed": true
+            }
+          }
+        },
+        "ema": {
+          "AAA": {
+            "raw_p_value": 0.03,
+            "cross_strategy_q_value": 0.04,
+            "status": "fdr_significant",
+            "evidence_ranking": {
+              "ranking_admissible": true,
+              "diagnostic_score": 70.0,
+              "oos_net_trade_edge_p_value": 0.03,
+              "contract_version": "cross-strategy-evidence-ranking-v1",
+              "status": "admitted",
+              "score": 70.0,
+              "failed_checks": [],
+              "global_fdr_passed": true
+            }
+          }
+        }
+      },
+      "interpretation": "Controls the expected false-discovery proportion across all full-history, point-in-time-admitted default stock-by-strategy OOS tests in one combined family."
+    }
+  }
+}

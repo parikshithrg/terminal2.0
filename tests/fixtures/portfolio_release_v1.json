@@ -1,0 +1,170 @@
+{
+  "fixture_contract": "portfolio-release-regression-fixture-v1",
+  "inputs": {
+    "instruments": [
+      ["stock:AAA", "stock", "Alpha Ltd"],
+      ["stock:BBB", "stock", "Beta Ltd"],
+      ["index:Nifty 50", "index", "Nifty 50"]
+    ],
+    "candles": [
+      ["stock:AAA", "2025-01-02", 100.0],
+      ["stock:AAA", "2025-07-02", 80.0],
+      ["stock:AAA", "2026-01-02", 110.0],
+      ["stock:BBB", "2025-01-02", 50.0],
+      ["stock:BBB", "2025-07-02", 40.0],
+      ["stock:BBB", "2026-01-02", 60.0],
+      ["index:Nifty 50", "2025-01-02", 1000.0],
+      ["index:Nifty 50", "2025-07-02", 900.0],
+      ["index:Nifty 50", "2026-01-02", 1080.0]
+    ],
+    "cash_flows": [
+      {"flow_date": "2025-01-02", "flow_type": "CONTRIBUTION", "amount_inr": 2000.0, "notes": "Initial capital"},
+      {"flow_date": "2025-07-02", "flow_type": "CONTRIBUTION", "amount_inr": 500.0, "notes": "Added capital"},
+      {"flow_date": "2026-01-02", "flow_type": "DIVIDEND", "amount_inr": 25.0, "notes": "Cash income"},
+      {"flow_date": "2026-01-02", "flow_type": "FEE", "amount_inr": 5.0, "notes": "Account fee"}
+    ],
+    "transactions": [
+      {"trade_date": "2025-01-02", "symbol": "AAA", "side": "BUY", "quantity": 10.0, "price_inr": 100.0, "fees_inr": 0.0, "notes": "Initial allocation"},
+      {"trade_date": "2025-01-02", "symbol": "BBB", "side": "BUY", "quantity": 20.0, "price_inr": 50.0, "fees_inr": 0.0, "notes": "Initial allocation"},
+      {"trade_date": "2025-07-02", "symbol": "BBB", "side": "BUY", "quantity": 10.0, "price_inr": 40.0, "fees_inr": 0.0, "notes": "Added allocation"}
+    ]
+  },
+  "expected": {
+    "overview": {
+      "as_of_date": "2026-01-02",
+      "contract_version": "portfolio-overview-v1",
+      "holdings": [
+        {
+          "allocation_pct": 62.07,
+          "average_cost_inr": 46.6667,
+          "cost_basis_inr": 1400.0,
+          "display_name": "Beta Ltd",
+          "market_price_inr": 60.0,
+          "market_value_inr": 1800.0,
+          "price_as_of_date": "2026-01-02",
+          "quantity": 30.0,
+          "realised_pnl_inr": 0.0,
+          "symbol": "BBB",
+          "unrealised_pnl_inr": 400.0,
+          "unrealised_return_pct": 28.57
+        },
+        {
+          "allocation_pct": 37.93,
+          "average_cost_inr": 100.0,
+          "cost_basis_inr": 1000.0,
+          "display_name": "Alpha Ltd",
+          "market_price_inr": 110.0,
+          "market_value_inr": 1100.0,
+          "price_as_of_date": "2026-01-02",
+          "quantity": 10.0,
+          "realised_pnl_inr": 0.0,
+          "symbol": "AAA",
+          "unrealised_pnl_inr": 100.0,
+          "unrealised_return_pct": 10.0
+        }
+      ],
+      "local_only": true,
+      "methodology": {
+        "benchmark_included": false,
+        "cash_flows_included": true,
+        "cost_basis": "moving_weighted_average_including_recorded_fees",
+        "performance_status": "point_in_time_valuation_foundation_only",
+        "valuation": "latest_stored_completed_session_close"
+      },
+      "orders_enabled": false,
+      "reconciliation": {
+        "cash_balance_inr": 120.0,
+        "cash_expenses_inr": 5.0,
+        "cash_history_available": true,
+        "contributions_inr": 2500.0,
+        "import_count": 0,
+        "income_inr": 25.0,
+        "issues": [],
+        "positions": 2,
+        "priced_positions": 2,
+        "status": "reconciled",
+        "withdrawals_inr": 0
+      },
+      "summary": {
+        "cash_balance_inr": 120.0,
+        "cash_flow_count": 4,
+        "cost_basis_inr": 2400.0,
+        "market_value_inr": 2900.0,
+        "positions": 2,
+        "priced_positions": 2,
+        "realised_pnl_inr": 0.0,
+        "transaction_count": 3,
+        "unrealised_pnl_inr": 500.0,
+        "unrealised_return_pct": 20.83
+      },
+      "trading_research_separated": true
+    },
+    "performance": {
+      "benchmark": {
+        "annualised_twr_pct": 8.0,
+        "instrument_id": "index:Nifty 50",
+        "label": "Nifty 50",
+        "money_weighted_return_pct": 11.5802,
+        "terminal_value_inr": 2760.0,
+        "time_weighted_return_pct": 8.0
+      },
+      "comparison": {
+        "excess_money_weighted_return_pct": 11.6443,
+        "excess_twr_pct": 7.0476
+      },
+      "contract_version": "portfolio-performance-v1",
+      "from_date": "2025-01-02",
+      "local_only": true,
+      "observations": 2,
+      "orders_enabled": false,
+      "portfolio": {
+        "annualised_twr_pct": 15.0476,
+        "money_weighted_return_pct": 23.2245,
+        "terminal_value_inr": 3020.0,
+        "time_weighted_return_pct": 15.0476
+      },
+      "series": [
+        {"benchmark_index": 100.0, "portfolio_index": 100.0, "portfolio_value_inr": 2000.0, "session_date": "2025-01-02"},
+        {"benchmark_index": 90.0, "portfolio_index": 80.0, "portfolio_value_inr": 2100.0, "session_date": "2025-07-02"},
+        {"benchmark_index": 108.0, "portfolio_index": 115.047619, "portfolio_value_inr": 3020.0, "session_date": "2026-01-02"}
+      ],
+      "status": "ready",
+      "through_date": "2026-01-02",
+      "trading_research_separated": true
+    },
+    "risk": {
+      "allocation": [
+        {"allocation_pct": 62.07, "display_name": "Beta Ltd", "market_value_inr": 1800.0, "symbol": "BBB"},
+        {"allocation_pct": 37.93, "display_name": "Alpha Ltd", "market_value_inr": 1100.0, "symbol": "AAA"}
+      ],
+      "as_of_date": "2026-01-02",
+      "concentration": {
+        "effective_positions": 1.89,
+        "hhi": 0.529137,
+        "largest_position_pct": 62.07,
+        "position_count": 2,
+        "state": "concentrated",
+        "top_five_pct": 100.0,
+        "top_three_pct": 100.0
+      },
+      "contract_version": "portfolio-risk-analysis-v1",
+      "contributions": [
+        {"display_name": "Beta Ltd", "realised_pnl_inr": 0.0, "return_contribution_pct": 16.0, "symbol": "BBB", "total_pnl_inr": 400.0, "unrealised_pnl_inr": 400.0},
+        {"display_name": "Alpha Ltd", "realised_pnl_inr": 0.0, "return_contribution_pct": 4.0, "symbol": "AAA", "total_pnl_inr": 100.0, "unrealised_pnl_inr": 100.0},
+        {"display_name": "Income, tax and cash fees", "realised_pnl_inr": 20.0, "return_contribution_pct": 0.8, "symbol": "CASH", "total_pnl_inr": 20.0, "unrealised_pnl_inr": 0.0}
+      ],
+      "drawdown": {
+        "current_drawdown_pct": 0.0,
+        "maximum_drawdown_pct": -20.0,
+        "observations": 3,
+        "peak_date": "2025-01-02",
+        "trough_date": "2025-07-02"
+      },
+      "local_only": true,
+      "net_external_capital_inr": 2500.0,
+      "orders_enabled": false,
+      "status": "ready",
+      "trading_research_separated": true
+    }
+  }
+}

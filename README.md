@@ -6,7 +6,7 @@ all live inside this project. PG-terminal does not need to be installed or runni
 
 ## Current scope
 
-- Dashboard, market state, F&O positioning and stock research.
+- Dashboard, market state, F&O positioning, stock research and long-term Portfolio.
 - Compact equal-card information layout; no chart dependency.
 - Dark and light themes.
 - Honest missing-data states.
@@ -158,6 +158,25 @@ bhavcopies and records every requested symbol/session as present or absent. The
 current audit is complete for all 90 reviewed exits: 34,903 of 34,903 required
 tradable sessions are stored. Confirmed pre-listing and other non-trading sessions
 are excluded only after the official daily archive verifies the absence.
+
+### Portfolio contract
+
+Portfolio is a local-only long-term holdings ledger, deliberately separated from
+the trading-research engine. It records completed buy/sell transactions, explicit
+cash flows and duplicate-safe broker CSV imports; it cannot create or submit an
+order. `/api/portfolio/overview` publishes completed-session valuation and
+reconciliation. `/api/portfolio/performance` publishes cash-flow-neutral TWR,
+annualised TWR, dated XIRR and a Nifty 50 comparison. `/api/portfolio/risk-analysis`
+publishes allocation, HHI/effective-position concentration, drawdown and P&L
+contribution. Missing cash history, benchmark sessions or held-stock prices gate
+the relevant result rather than generating an estimate.
+
+To begin, open **Portfolio**, record contributions and withdrawals, then enter
+completed transactions or import a compatible equity tradebook CSV. Record
+dividends, interest, taxes and account fees separately. Review the reconciliation
+panel before relying on performance or risk evidence. All portfolio records remain
+inside `data/workspace_market.sqlite3`; back up that file before reinstalling or
+moving the workspace.
 
 ## Run locally
 

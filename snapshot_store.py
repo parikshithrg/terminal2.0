@@ -21,6 +21,8 @@ from typing import Callable
 
 import requests
 
+from workspace_analytics.sqlite_store import connect_database
+
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_DB = ROOT / "data" / "workspace_snapshots.sqlite3"
@@ -67,9 +69,7 @@ def fetch(url: str, timeout: int = 90) -> bytes:
 
 def connect(path: Path = DEFAULT_DB) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path, timeout=30)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
+    connection = connect_database(path)
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS snapshot_runs (
@@ -1073,8 +1073,7 @@ def factor_constituents(
     if style_bucket not in {"Value", "Core", "Growth"}:
         raise ValueError("invalid_style_bucket")
 
-    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=10)
-    connection.row_factory = sqlite3.Row
+    connection = connect_database(path, read_only=True)
     try:
         snapshot_date = connection.execute(
             "SELECT MAX(snapshot_date) FROM equity_factor_classifications"

@@ -1,6 +1,6 @@
 # Workspace 2.0 — session handoff
 
-Updated: 16 November 2026
+Updated: 17 November 2026
 
 ## Product objective
 
@@ -95,7 +95,62 @@ must not present a research score as a guaranteed forecast.
   trades, positive expectancy, profit factor above one, 95% coverage and prior
   ablation improvement. Walk-forward, bootstrap and within-strategy FDR correctly
   stop at pre-admission rather than producing misleading evidence.
-- Verification checkpoint: 91 automated tests pass, Python and JavaScript syntax
+- Engine modularisation has started. Statistical significance, deterministic
+  trade bootstrap evidence and within-family FDR now live in the focused
+  `workspace_analytics.statistics` module. Compatibility aliases preserve the
+  existing `workspace_engine` surface and published JSON contracts.
+- The second modularisation increment is complete: point-in-time backtest quality
+  gates/audits, the versioned execution-cost schedule/calculator and reusable
+  drawdown calculation now live in `workspace_analytics.data_quality`,
+  `workspace_analytics.execution` and `workspace_analytics.metrics`. Existing
+  engine imports and API result contracts remain compatible.
+- Modularisation step 3 is active. Its ranking slice is complete: comparison
+  diagnostic scoring, full-history OOS admission and the combined cross-strategy
+  FDR family now live in `workspace_analytics.ranking`. Frozen gate names,
+  weights, decisions and JSON contract versions are unchanged. The frozen market-
+  regime, sector-trend and stock-leadership/priming classifiers plus the
+  deliberately unjoined market sample summary now live in
+  `workspace_analytics.regimes`; the engine's published call surface is bound to
+  those components. Modularisation step 3 is now complete: the five frozen trend
+  signal rules live in `workspace_analytics.trend_strategies`, and the five mean-
+  reversion rules live in `workspace_analytics.mean_reversion_strategies`.
+  Compatibility adapters inject the unchanged execution, cost and portfolio-
+  metric engine, and direct parity tests cover all ten strategies.
+- Modularisation step 4 is complete. A reusable persistent SQLite result cache now
+  keys entries to semantic source versions made from each declared dependency's
+  latest session, retrieval timestamp and row count. Cache-table writes and
+  unrelated tables cannot invalidate results. `dashboard_overview` is the first
+  integrated contract and replaces only its stale version after new EOD input;
+  the local screener, factor-research foundation and stock-YTD table now share
+  that boundary and rebuild once per relevant candles/instruments/snapshot
+  revision. Build and parameterised endpoints remain deliberately uncached.
+  Step 4 is complete: full-history OOS evidence is restart-safe in the persistent
+  cache and uses candles, instruments, corporate-action audit, point-in-time
+  membership/classification and size-snapshot source revisions. Cross-strategy
+  FDR hydrates only frozen default families after restart; custom parameters no
+  longer overwrite defaults. Whole-file metadata and the redundant process-
+  memory result cache are removed.
+- Modularisation step 5 is complete. Expensive research builds now use a reusable
+  persistent `background-research-job-v1` registry with percentage, stage,
+  completed/total work, timestamps, structured errors, details and terminal
+  state. The explicit full-history OOS family build records progress after each
+  strategy, recent jobs are available at `/api/research/jobs`, and Stock Research
+  displays the live percentage and current engine. Restart-orphaned running jobs
+  become `interrupted` instead of appearing stuck indefinitely.
+- Modularisation step 6 is complete. `workspace_analytics.sqlite_store` now owns
+  the connection policy for the engine, semantic cache, background jobs and
+  official snapshot store. Both production databases are verified in WAL mode
+  with a 30-second busy timeout, NORMAL synchronous mode and foreign keys. Added
+  only the missing point-in-time universe/symbol and stock-kind indexes; retained
+  the existing candle indexes after query-plan inspection. A regression test
+  proves readers remain responsive during an uncommitted writer transaction.
+- Modularisation step 7 is complete. The versioned synthetic
+  `published-analytics-regression-fixture-v1` freezes representative results for
+  the public equity-delivery cost contract, SMA signal state, market-regime
+  classification, combined cross-strategy FDR and persistent job status. It does
+  not freeze live prices, dates or constituents. The fixture README requires an
+  intentional production contract-version bump for any semantic update.
+- Verification checkpoint: 140 automated tests pass, Python and JavaScript syntax
   checks pass, and `git diff --check` passes.
 
 ## Next workstream — top-down opportunity engine
@@ -193,3 +248,50 @@ No milestones remain in this workstream. A future model iteration must begin as 
 separately specified research cycle with new hypotheses frozen before results are
 inspected, or development can move to another project milestone at the user's
 direction.
+
+## Completed workstream — engine modularisation and performance
+
+All seven increments are complete: statistics; shared data-quality,
+execution-cost and metric contracts; ranking/regime/strategy components;
+semantic persistent caches; observable background-job progress; and SQLite
+concurrency/query tuning; plus versioned integration fixtures and published-result
+regressions.
+
+Two major product milestones remain: Historical regimes and cross-page
+consolidation/release audit. Expense Analyser was removed from
+the development roadmap at the user's direction.
+
+All five Portfolio increments are complete. `workspace_analytics.portfolio` owns a
+local-only transaction ledger with validated known symbols, future-date and
+oversell gates, moving weighted-average cost basis including recorded fees, and
+latest stored completed-session valuation. `/api/portfolio/overview` publishes
+holdings, allocation, realised/unrealised P&L and price coverage;
+`POST /api/portfolio/transactions` records a buy or sell. The enabled Portfolio
+page provides the transaction form, summary, current holdings and recent ledger
+entries. It consumes no strategy/backtest ranking and cannot place orders. Step
+2 adds atomic, duplicate-safe broker CSV imports, explicit contribution,
+withdrawal, dividend, interest, tax and fee records, reconciled cash, import
+history and actionable integrity issues. Invalid imports roll back completely.
+
+Step 3 adds `/api/portfolio/performance` and the `portfolio-performance-v1`
+contract. It publishes daily chain-linked TWR, annualised TWR and dated XIRR only
+when transaction, external-cash-flow, benchmark and held-stock price history are
+admissible. Contributions and withdrawals are neutralised; income remains return
+and costs reduce return. Nifty 50 receives the same dated external cash flows,
+enabling an explicit excess-TWR comparison. The Portfolio page shows these values,
+the measured session window and precise gate reasons. No live portfolio data was
+created as part of development.
+
+Step 4 adds `/api/portfolio/risk-analysis` and the
+`portfolio-risk-analysis-v1` contract. It publishes latest-EOD allocation,
+top-weight concentration, HHI/effective positions, cash-flow-neutral maximum
+drawdown and per-symbol realised-plus-unrealised P&L contribution. Cash income
+and costs remain separately identified because cash-flow records do not yet have
+reliable symbol attribution. The UI carries forward performance gates and never
+infers risk evidence from incomplete history.
+
+Step 5 adds `portfolio-release-regression-fixture-v1` and release regressions for
+the three public contracts, empty/gated states, required DOM IDs and endpoints,
+unique element IDs and responsive CSS. Desktop, tablet and mobile browser audits
+passed, and the README now documents setup, reconciliation, local persistence and
+backup boundaries. The next major milestone is Historical regimes.

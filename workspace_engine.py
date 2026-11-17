@@ -15,7 +15,6 @@ import hashlib
 import io
 import json
 import math
-import random
 import re
 import sqlite3
 import threading
@@ -30,6 +29,68 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import requests
+
+from workspace_analytics.cache import (
+    load_versioned_result,
+    load_versioned_results_by_prefix,
+    semantic_source_version,
+    store_versioned_result,
+)
+from workspace_analytics.data_quality import quality_checked_backtest_series
+from workspace_analytics.execution import (
+    DEFAULT_BACKTEST_COST_CONFIG,
+    EQUITY_DELIVERY_COST_SCHEDULE,
+    equity_delivery_cost_calculator,
+    equity_delivery_side_charges as _equity_delivery_side_charges,
+    normalise_cost_config as _normalise_cost_config,
+)
+from workspace_analytics.jobs import (
+    finish_job,
+    job_status,
+    list_jobs,
+    start_job,
+    update_job,
+)
+from workspace_analytics.metrics import maximum_drawdown_pct as _maximum_drawdown_pct
+from workspace_analytics.mean_reversion_strategies import (
+    bollinger_mean_reversion_series as _bollinger_mean_reversion_component,
+    pullback_uptrend_series as _pullback_uptrend_component,
+    rsi_mean_reversion_series as _rsi_mean_reversion_component,
+    selloff_recovery_series as _selloff_recovery_component,
+    zscore_mean_reversion_series as _zscore_mean_reversion_component,
+)
+from workspace_analytics.portfolio import (
+    import_portfolio_tradebook,
+    portfolio_overview,
+    portfolio_performance,
+    portfolio_risk_analysis,
+    record_portfolio_cash_flow,
+    record_portfolio_transaction,
+)
+from workspace_analytics.regimes import (
+    market_regime_classification as _market_regime_classification_component,
+    market_regime_sample_summary as _market_regime_sample_summary_component,
+    sector_trend_classification as _sector_trend_classification_component,
+    stock_leadership_classification as _stock_leadership_classification_component,
+)
+from workspace_analytics.ranking import (
+    attach_comparison_evidence_rankings,
+    attach_oos_evidence_rankings,
+    cross_strategy_fdr_from_payloads,
+)
+from workspace_analytics.statistics import (
+    attach_benjamini_hochberg_fdr as _attach_benjamini_hochberg_fdr,
+    bootstrap_trade_evidence as _bootstrap_trade_evidence,
+    trade_edge_p_value as _trade_edge_p_value,
+)
+from workspace_analytics.sqlite_store import connect_database
+from workspace_analytics.trend_strategies import (
+    donchian_breakout_series as _donchian_breakout_component,
+    ema_crossover_series as _ema_crossover_component,
+    moving_average_crossover_series as _moving_average_crossover_component,
+    time_series_momentum_series as _time_series_momentum_component,
+    triple_sma_alignment_series as _triple_sma_alignment_component,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -526,9 +587,47 @@ def _upcoming_macro_events(as_of: date) -> list[dict[str, Any]]:
 
 
 def _connect(path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(path, timeout=30)
-    connection.row_factory = sqlite3.Row
-    return connection
+    return connect_database(path)
+
+
+def _ensure_workspace_query_indexes(connection: sqlite3.Connection) -> None:
+    """Install indexes justified by repeated point-in-time research lookups."""
+    tables = {
+        str(row[0]) for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    definitions = (
+        (
+            "instruments", "instruments_kind_id_idx",
+            "CREATE INDEX IF NOT EXISTS instruments_kind_id_idx "
+            "ON instruments(kind, instrument_id)",
+        ),
+        (
+            "universe_classification_snapshots",
+            "universe_classification_symbol_date_idx",
+            "CREATE INDEX IF NOT EXISTS universe_classification_symbol_date_idx "
+            "ON universe_classification_snapshots(index_name, symbol, snapshot_date DESC)",
+        ),
+        (
+            "universe_membership_events", "universe_membership_symbol_date_idx",
+            "CREATE INDEX IF NOT EXISTS universe_membership_symbol_date_idx "
+            "ON universe_membership_events(index_name, symbol, effective_date, action)",
+        ),
+        (
+            "symbol_history", "symbol_history_instrument_date_idx",
+            "CREATE INDEX IF NOT EXISTS symbol_history_instrument_date_idx "
+            "ON symbol_history(instrument_id, effective_date)",
+        ),
+        (
+            "symbol_history", "symbol_history_effective_date_idx",
+            "CREATE INDEX IF NOT EXISTS symbol_history_effective_date_idx "
+            "ON symbol_history(effective_date)",
+        ),
+    )
+    for table, _name, statement in definitions:
+        if table in tables:
+            connection.execute(statement)
 
 
 def _pct(current: float | None, previous: float | None) -> float | None:
@@ -1227,6 +1326,7 @@ def ensure_workspace_schema(path: Path = DEFAULT_MARKET_DB) -> None:
                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at""",
             (datetime.now(timezone.utc).isoformat(),),
         )
+        _ensure_workspace_query_indexes(connection)
         connection.commit()
     finally:
         connection.close()
@@ -2929,6 +3029,12 @@ def _market_regime_sample_summary(
     }
 
 
+# Compatibility bindings keep the published engine surface stable while the
+# frozen calculation now lives in the focused analytics component.
+market_regime_classification = _market_regime_classification_component
+_market_regime_sample_summary = _market_regime_sample_summary_component
+
+
 def _persist_market_regime(connection: sqlite3.Connection, row: dict[str, Any]) -> None:
     connection.execute(
         """INSERT OR REPLACE INTO market_regime_ledger(
@@ -3296,6 +3402,10 @@ def sector_trend_classification(
             "strategy_results_used": False,
         },
     }
+
+
+# Preserve the public engine import while executing the focused component.
+sector_trend_classification = _sector_trend_classification_component
 
 
 _SECTOR_TREND_COLUMNS = (
@@ -3711,6 +3821,10 @@ def stock_leadership_classification(
             "strategy_results_used": False,
         },
     }
+
+
+# Preserve the public engine import while executing the focused component.
+stock_leadership_classification = _stock_leadership_classification_component
 
 
 _STOCK_LEADERSHIP_COLUMNS = (
@@ -4863,148 +4977,16 @@ def _quality_checked_backtest_series(
     reference_context: dict[str, Any],
     history_mode: str = "comparison",
 ) -> tuple[list[sqlite3.Row], dict[str, Any]]:
-    if history_mode not in {"comparison", "full"}:
-        raise ValueError("invalid_backtest_history_mode")
-    common_as_of = reference_context.get("common_as_of_date")
-    reference_dates = list(reference_context.get("reference_dates") or [])
-    comparison_required_total = required_observations + BACKTEST_COMPARISON_SESSIONS - 1
-    all_rows = _instrument_series(connection, instrument_id)
-    row_by_date = {str(row["session_date"]): row for row in all_rows if not common_as_of or str(row["session_date"]) <= common_as_of}
-    if history_mode == "full" and row_by_date:
-        first_observation = min(row_by_date)
-        target_dates = [session for session in reference_dates if session >= first_observation]
-        required_total = required_observations
-    else:
-        target_dates = reference_dates[-comparison_required_total:] if len(reference_dates) >= comparison_required_total else []
-        required_total = comparison_required_total
-    selected_rows = [row_by_date[session] for session in target_dates if session in row_by_date]
-    missing_dates = [session for session in target_dates if session not in row_by_date]
-    invalid_ohlc: list[str] = []
-    abnormal_jumps: list[dict[str, Any]] = []
-    previous_close: float | None = None
-    for row in selected_rows:
-        session = str(row["session_date"])
-        try:
-            opening, high, low, close = (float(row[key]) for key in ("open", "high", "low", "close"))
-        except (TypeError, ValueError):
-            invalid_ohlc.append(session)
-            continue
-        if not all(math.isfinite(value) and value > 0 for value in (opening, high, low, close)) or high < max(opening, close) or low > min(opening, close) or high < low:
-            invalid_ohlc.append(session)
-        if previous_close and previous_close > 0:
-            jump = 100 * (close / previous_close - 1.0)
-            if abs(jump) > BACKTEST_ABNORMAL_JUMP_PCT:
-                abnormal_jumps.append({"session_date": session, "return_pct": _round(jump)})
-        previous_close = close
-
-    metadata = connection.execute(
-        "SELECT adjustment_status,adjustment_source_url,source,updated_at FROM instruments WHERE instrument_id=?",
-        (instrument_id,),
-    ).fetchone()
-    source_rows = connection.execute(
-        """SELECT source, COUNT(*) AS rows, MAX(retrieved_at) AS retrieved_at
-           FROM candles WHERE instrument_id=? AND (? IS NULL OR session_date<=?) GROUP BY source ORDER BY rows DESC""",
-        (instrument_id, common_as_of, common_as_of),
-    ).fetchall()
-    duplicate_rows = connection.execute(
-        """SELECT session_date, COUNT(*) AS rows FROM candles
-           WHERE instrument_id=? AND (? IS NULL OR session_date<=?)
-           GROUP BY session_date HAVING COUNT(*) > 1 ORDER BY session_date""",
-        (instrument_id, common_as_of, common_as_of),
-    ).fetchall()
-    action_rows = connection.execute(
-        """SELECT action_type,purpose,ex_date,record_date,adjustment_requirement,
-                  review_status,source_url,retrieved_at
-           FROM corporate_actions
-           WHERE instrument_id=? AND ex_date BETWEEN ? AND ? ORDER BY ex_date""",
-        (instrument_id, target_dates[0] if target_dates else "0000-01-01", common_as_of or "9999-12-31"),
-    ).fetchall()
-    lineage_rows = connection.execute(
-        """SELECT old_symbol,new_symbol,effective_date,review_status,source_url,retrieved_at
-           FROM symbol_history WHERE instrument_id=? ORDER BY effective_date""",
-        (instrument_id,),
-    ).fetchall()
-    coverage_row = connection.execute(
-        "SELECT value,updated_at FROM workspace_metadata WHERE key='corporate_action_coverage'"
-    ).fetchone()
-    corporate_coverage: dict[str, Any] | None = None
-    if coverage_row:
-        try:
-            corporate_coverage = json.loads(coverage_row["value"])
-        except (TypeError, json.JSONDecodeError):
-            corporate_coverage = None
-    latest_observation = max(row_by_date, default=None)
-    gates: list[str] = []
-    warnings: list[str] = []
-    if not common_as_of or not target_dates:
-        gates.append("reference_window_unavailable")
-    if latest_observation != common_as_of:
-        gates.append("stale_latest_observation")
-    insufficient_history = (
-        len(selected_rows) < required_observations
-        if history_mode == "full"
-        else len(all_rows) < required_total
+    return quality_checked_backtest_series(
+        connection,
+        instrument_id,
+        required_observations,
+        reference_context,
+        history_mode,
+        instrument_series=_instrument_series,
+        comparison_sessions=BACKTEST_COMPARISON_SESSIONS,
+        abnormal_jump_pct=BACKTEST_ABNORMAL_JUMP_PCT,
     )
-    if insufficient_history:
-        gates.append("insufficient_common_history")
-    if missing_dates:
-        gates.append("missing_reference_sessions")
-    if duplicate_rows:
-        gates.append("duplicate_sessions")
-    if invalid_ohlc:
-        gates.append("invalid_ohlc")
-    if abnormal_jumps:
-        gates.append("abnormal_price_jump")
-    adjustment_status = metadata["adjustment_status"] if metadata else "unknown"
-    if adjustment_status not in {"provider_reported_adjusted", "verified_adjusted"}:
-        gates.append("adjustment_provenance_unverified")
-    if (not corporate_coverage or not target_dates
-            or corporate_coverage.get("from", "9999-12-31") > target_dates[0]
-            or corporate_coverage.get("through", "0000-01-01") < (common_as_of or "9999-12-31")):
-        if history_mode == "full":
-            warnings.append("corporate_action_ledger_partial_full_history")
-        else:
-            gates.append("corporate_action_ledger_incomplete")
-    unresolved_actions = [row for row in action_rows if row["review_status"] in {"manual_review", "manual_lineage_review"}]
-    if unresolved_actions:
-        gates.append("corporate_action_manual_review")
-    audit = {
-        "status": "ready" if not gates else "gated",
-        "history_mode": history_mode,
-        "common_as_of_date": common_as_of,
-        "comparison_sessions": BACKTEST_COMPARISON_SESSIONS if history_mode == "comparison" else None,
-        "required_warmup_observations": required_observations - 1,
-        "required_total_observations": required_total,
-        "stored_observations": len(all_rows),
-        "selected_observations": len(selected_rows),
-        "evaluation_start_date": target_dates[required_observations - 1] if len(target_dates) >= required_observations else None,
-        "history_start_date": target_dates[0] if target_dates else None,
-        "latest_observation": latest_observation,
-        "missing_session_count": len(missing_dates),
-        "missing_sessions": missing_dates[:20],
-        "duplicate_session_count": len(duplicate_rows),
-        "duplicate_sessions": [dict(row) for row in duplicate_rows[:20]],
-        "invalid_ohlc_count": len(invalid_ohlc),
-        "invalid_ohlc_sessions": invalid_ohlc[:20],
-        "abnormal_jump_count": len(abnormal_jumps),
-        "abnormal_jumps": abnormal_jumps[:20],
-        "blocking_gates": gates,
-        "warnings": warnings,
-        "adjustment_status": adjustment_status,
-        "adjustment_source_url": metadata["adjustment_source_url"] if metadata else None,
-        "adjustment_gate_enforced": True,
-        "corporate_action_count": len(action_rows),
-        "corporate_actions": [dict(row) for row in action_rows],
-        "unresolved_corporate_action_count": len(unresolved_actions),
-        "corporate_action_coverage": corporate_coverage,
-        "corporate_action_coverage_updated_at": coverage_row["updated_at"] if coverage_row else None,
-        "symbol_lineage": [dict(row) for row in lineage_rows],
-        "return_contract": "price_return_excluding_ordinary_cash_dividends",
-        "instrument_source": metadata["source"] if metadata else None,
-        "instrument_updated_at": metadata["updated_at"] if metadata else None,
-        "candle_sources": [dict(row) for row in source_rows],
-    }
-    return (selected_rows if not gates else []), audit
 
 
 def nifty50_ytd(path: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
@@ -5538,7 +5520,7 @@ def refresh_global_risk(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
         connection.close()
 
 
-def dashboard_overview(
+def _dashboard_overview_uncached(
     market_db: Path = DEFAULT_MARKET_DB,
     snapshot_db: Path = DEFAULT_SNAPSHOT_DB,
 ) -> dict[str, Any]:
@@ -5693,6 +5675,42 @@ def dashboard_overview(
         connection.close()
 
 
+def dashboard_overview(
+    market_db: Path = DEFAULT_MARKET_DB,
+    snapshot_db: Path = DEFAULT_SNAPSHOT_DB,
+) -> dict[str, Any]:
+    """Return the overview from a semantic, completed-session result cache."""
+    contract_version = "workspace-overview-v3"
+    source_version = semantic_source_version(
+        (
+            (market_db, (
+                ("candles", "session_date", "retrieved_at"),
+                ("futures_contracts", "expiry_date", "last_seen_at"),
+                ("futures_eod_snapshots", "session_date", "retrieved_at"),
+                ("institutional_flows", "session_date", "retrieved_at"),
+                ("global_risk_observations", "observation_date", "retrieved_at"),
+                ("universe_membership_events", "effective_date", "retrieved_at"),
+                ("universe_classification_snapshots", "snapshot_date", "retrieved_at"),
+            )),
+            (snapshot_db, (
+                ("sovereign_yield_observations", "observation_date", "retrieved_at"),
+            )),
+        ),
+        context={"calendar_date": date.today().isoformat()},
+    )
+    cached = load_versioned_result(
+        market_db, "dashboard_overview", contract_version, source_version,
+    )
+    if cached is not None:
+        return cached
+    payload = _dashboard_overview_uncached(market_db, snapshot_db)
+    if payload.get("ok"):
+        store_versioned_result(
+            market_db, "dashboard_overview", contract_version, source_version, payload,
+        )
+    return payload
+
+
 def domestic_core(market_db: Path = DEFAULT_MARKET_DB, snapshot_db: Path = DEFAULT_SNAPSHOT_DB) -> dict[str, Any]:
     connection = _connect(market_db)
     try:
@@ -5761,302 +5779,84 @@ def _technical_rows(market_db: Path) -> list[dict[str, Any]]:
         connection.close()
 
 
-def _maximum_drawdown_pct(equity_curve: list[float]) -> float | None:
-    if not equity_curve:
-        return None
-    peak = equity_curve[0]
-    maximum_drawdown = 0.0
-    for equity in equity_curve:
-        peak = max(peak, equity)
-        if peak > 0:
-            maximum_drawdown = min(maximum_drawdown, equity / peak - 1.0)
-    return _round(100 * maximum_drawdown)
-
-
-def _beta_continued_fraction(a: float, b: float, x: float) -> float:
-    """Numerically evaluate the continued fraction used by incomplete beta."""
-    maximum_iterations, epsilon, floor = 200, 3e-14, 1e-300
-    qab, qap, qam = a + b, a + 1.0, a - 1.0
-    c = 1.0
-    d = 1.0 - qab * x / qap
-    if abs(d) < floor:
-        d = floor
-    d = 1.0 / d
-    value = d
-    for iteration in range(1, maximum_iterations + 1):
-        doubled = 2 * iteration
-        coefficient = iteration * (b - iteration) * x / ((qam + doubled) * (a + doubled))
-        d = 1.0 + coefficient * d
-        c = 1.0 + coefficient / c
-        if abs(d) < floor:
-            d = floor
-        if abs(c) < floor:
-            c = floor
-        d = 1.0 / d
-        value *= d * c
-        coefficient = -(a + iteration) * (qab + iteration) * x / ((a + doubled) * (qap + doubled))
-        d = 1.0 + coefficient * d
-        c = 1.0 + coefficient / c
-        if abs(d) < floor:
-            d = floor
-        if abs(c) < floor:
-            c = floor
-        d = 1.0 / d
-        delta = d * c
-        value *= delta
-        if abs(delta - 1.0) < epsilon:
-            break
-    return value
-
-
-def _regularized_incomplete_beta(a: float, b: float, x: float) -> float:
-    if x <= 0:
-        return 0.0
-    if x >= 1:
-        return 1.0
-    factor = math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
-                      + a * math.log(x) + b * math.log1p(-x))
-    if x < (a + 1.0) / (a + b + 2.0):
-        return factor * _beta_continued_fraction(a, b, x) / a
-    return 1.0 - factor * _beta_continued_fraction(b, a, 1.0 - x) / b
-
-
-def _trade_edge_p_value(completed_trade_returns: list[float]) -> float | None:
-    """Two-sided one-sample Student t-test of mean completed-trade return vs zero."""
-    count = len(completed_trade_returns)
-    if count < 2:
-        return None
-    average = mean(completed_trade_returns)
-    sample_variance = sum((value - average) ** 2 for value in completed_trade_returns) / (count - 1)
-    if sample_variance <= 0:
-        return 1.0 if average == 0 else 0.0
-    statistic = abs(average) / math.sqrt(sample_variance / count)
-    degrees = count - 1
-    probability = _regularized_incomplete_beta(degrees / 2.0, 0.5, degrees / (degrees + statistic * statistic))
-    return _round(min(1.0, max(0.0, probability)), 6)
-
-
-def _percentile(values: list[float], probability: float) -> float | None:
-    """Linearly interpolated percentile for a non-empty finite sample."""
-    finite = sorted(value for value in values if math.isfinite(value))
-    if not finite:
-        return None
-    position = (len(finite) - 1) * min(1.0, max(0.0, probability))
-    lower = int(math.floor(position))
-    upper = int(math.ceil(position))
-    if lower == upper:
-        return finite[lower]
-    weight = position - lower
-    return finite[lower] * (1.0 - weight) + finite[upper] * weight
-
-
-def _sample_profit_factor(sample: list[float]) -> float | None:
-    gross_profit = sum(value for value in sample if value > 0)
-    gross_loss = abs(sum(value for value in sample if value < 0))
-    return gross_profit / gross_loss if gross_loss > 0 else None
-
-
-def _bootstrap_trade_evidence(
-    completed_trade_returns: list[float], resamples: int = 1000, minimum_trades: int = 15,
-) -> dict[str, Any]:
-    """Deterministic ordinary and circular moving-block bootstrap evidence."""
-    sample = [float(value) for value in completed_trade_returns if math.isfinite(float(value))]
-    count = len(sample)
-    block_length = min(count, max(2, int(round(math.sqrt(count))))) if count else None
-    base = {
-        "contract_version": "trade-bootstrap-evidence-v1",
-        "sample": {
-            "completed_net_trades": count,
-            "minimum_required": minimum_trades,
-            "sampling_unit": "ordered_cost_adjusted_completed_trade_return",
-        },
-        "confidence_level": 0.95,
-        "ordinary_bootstrap": None,
-        "moving_block_bootstrap": None,
-    }
-    if count < minimum_trades:
-        return {
-            **base,
-            "status": "insufficient_sample",
-            "interpretation": f"Requires at least {minimum_trades} completed cost-adjusted trades; {count} are available.",
-        }
-
-    iterations = max(200, min(int(resamples), 5000))
-    seed_material = "|".join(f"{value:.10f}" for value in sample)
-    seed = int(hashlib.sha256(seed_material.encode("utf-8")).hexdigest()[:16], 16)
-    independent_rng = random.Random(seed)
-    block_rng = random.Random(seed ^ 0x9E3779B97F4A7C15)
-
-    def summarise(draws: list[list[float]], method: str) -> dict[str, Any]:
-        expectancies = [mean(draw) for draw in draws]
-        profit_factors = [value for value in (_sample_profit_factor(draw) for draw in draws) if value is not None]
-        expectancy_interval = [_percentile(expectancies, 0.025), _percentile(expectancies, 0.975)]
-        profit_factor_interval = [_percentile(profit_factors, 0.025), _percentile(profit_factors, 0.975)]
-        return {
-            "method": method,
-            "resamples": iterations,
-            "valid_profit_factor_resamples": len(profit_factors),
-            "net_expectancy_ci_95_pct": [_round(value) for value in expectancy_interval],
-            "net_profit_factor_ci_95": [_round(value) for value in profit_factor_interval],
-            "probability_net_expectancy_positive": _round(sum(value > 0 for value in expectancies) / iterations, 4),
-        }
-
-    independent_draws = [
-        [sample[independent_rng.randrange(count)] for _ in range(count)]
-        for _ in range(iterations)
-    ]
-    block_draws: list[list[float]] = []
-    for _ in range(iterations):
-        draw: list[float] = []
-        while len(draw) < count:
-            start = block_rng.randrange(count)
-            draw.extend(sample[(start + offset) % count] for offset in range(block_length or 1))
-        block_draws.append(draw[:count])
-
-    return {
-        **base,
-        "status": "ready",
-        "ordinary_bootstrap": summarise(independent_draws, "iid_trade_bootstrap"),
-        "moving_block_bootstrap": {
-            **summarise(block_draws, "circular_moving_block_trade_bootstrap"),
-            "block_length_trades": block_length,
-        },
-        "interpretation": "Intervals quantify sampling uncertainty in net completed-trade evidence; they are not forecasts or trade instructions.",
-    }
-
-
-def _attach_benjamini_hochberg_fdr(
-    results: list[dict[str, Any]], alpha: float = 0.05,
-) -> dict[str, Any]:
-    """Attach monotone Benjamini-Hochberg q-values to one strategy universe."""
-    tests = [
-        (index, float(row["net_trade_edge_p_value"]))
-        for index, row in enumerate(results)
-        if row.get("status") == "ready" and row.get("net_trade_edge_p_value") is not None
-    ]
-    ordered = sorted(tests, key=lambda item: item[1])
-    adjusted: dict[int, float] = {}
-    running = 1.0
-    total = len(ordered)
-    for rank in range(total, 0, -1):
-        index, probability = ordered[rank - 1]
-        running = min(running, probability * total / rank)
-        adjusted[index] = min(1.0, max(0.0, running))
-    for index, row in enumerate(results):
-        q_value = adjusted.get(index)
-        row["net_trade_edge_q_value"] = _round(q_value, 6)
-        row["multiple_testing_status"] = (
-            "fdr_significant" if q_value is not None and q_value <= alpha else
-            "tested_not_significant" if q_value is not None else "not_tested"
-        )
-    return {
-        "contract_version": "benjamini-hochberg-fdr-v1",
-        "family": "one_strategy_across_comparable_stocks",
-        "alpha": alpha,
-        "tested_hypotheses": total,
-        "raw_p_below_alpha": sum(probability <= alpha for _, probability in tests),
-        "fdr_q_below_alpha": sum(value <= alpha for value in adjusted.values()),
-        "interpretation": "Controls the expected false-discovery proportion within this strategy's comparable stock family; it does not correct across strategy families.",
-    }
-
-
-def _clamp_unit(value: float) -> float:
-    return min(1.0, max(0.0, value))
-
-
 def _attach_comparison_evidence_rankings(results: list[dict[str, Any]]) -> dict[str, Any]:
-    """Attach a transparent first-stage score without ranking failed evidence.
-
-    This contract deliberately uses the common 252-session comparison window.
-    Full walk-forward/OOS substitution is the next increment; until then the
-    contract remains provisional and exposes a diagnostic score only when gated.
-    """
-    weights = {
-        "net_profit_factor": 20.0,
-        "net_trade_edge": 15.0,
-        "completed_trade_sample": 10.0,
-        "within_strategy_confidence": 15.0,
-        "drawdown_control": 10.0,
-        "excess_return": 10.0,
-        "exposure_quality": 5.0,
-        "turnover_efficiency": 5.0,
-        "cost_efficiency": 5.0,
-        "period_stability": 5.0,
-    }
-    admitted = 0
-    for row in results:
-        if row.get("status") != "ready":
-            row["evidence_ranking"] = {
-                "status": "gated", "ranking_admissible": False,
-                "score": None, "diagnostic_score": None,
-                "failed_checks": ["data_quality"],
-            }
-            continue
-        profit_factor = float(row.get("net_profit_factor") or 0.0)
-        edge = float(row.get("net_trade_expectancy_pct") or 0.0)
-        trades = int(row.get("completed_trades") or 0)
-        q_value = row.get("net_trade_edge_q_value")
-        drawdown = float(row.get("net_maximum_drawdown_pct") or -100.0)
-        excess = float(row.get("excess_return_pct") or 0.0)
-        exposure = float(row.get("exposure_pct") or 0.0)
-        completed_turns = int(row.get("executed_sells") or 0)
-        cost_drag = max(0.0, float(row.get("estimated_cost_drag_pct") or 0.0))
-        components = {
-            "net_profit_factor": weights["net_profit_factor"] * _clamp_unit((profit_factor - 1.0) / 1.5),
-            "net_trade_edge": weights["net_trade_edge"] * _clamp_unit(edge / 5.0),
-            "completed_trade_sample": weights["completed_trade_sample"] * _clamp_unit(trades / 25.0),
-            "within_strategy_confidence": weights["within_strategy_confidence"] * _clamp_unit((0.10 - float(q_value)) / 0.10) if q_value is not None else 0.0,
-            "drawdown_control": weights["drawdown_control"] * _clamp_unit((drawdown + 30.0) / 30.0),
-            "excess_return": weights["excess_return"] * _clamp_unit((excess + 10.0) / 30.0),
-            "exposure_quality": weights["exposure_quality"] * _clamp_unit(1.0 - abs(exposure - 50.0) / 50.0),
-            "turnover_efficiency": weights["turnover_efficiency"] * _clamp_unit(1.0 - completed_turns / 20.0),
-            "cost_efficiency": weights["cost_efficiency"] * _clamp_unit(1.0 - cost_drag / 10.0),
-            "period_stability": 0.0,
-        }
-        checks = {
-            "minimum_completed_trades": trades >= 15,
-            "net_profit_factor": profit_factor >= 1.10,
-            "positive_net_trade_edge": edge > 0,
-            "within_strategy_fdr": q_value is not None and float(q_value) <= 0.05,
-            "drawdown_limit": drawdown >= -25.0,
-            "positive_excess_return": excess > 0,
-            "out_of_sample_stability": False,
-        }
-        failed = [name for name, passed in checks.items() if not passed]
-        diagnostic = sum(components.values())
-        ranking_admissible = not failed
-        admitted += int(ranking_admissible)
-        row["evidence_ranking"] = {
-            "contract_version": "comparison-evidence-ranking-v1",
-            "status": "admitted" if ranking_admissible else "gated",
-            "ranking_admissible": ranking_admissible,
-            "score": _round(diagnostic, 2) if ranking_admissible else None,
-            "diagnostic_score": _round(diagnostic, 2),
-            "components": {name: _round(value, 2) for name, value in components.items()},
-            "weights": weights,
-            "checks": checks,
-            "failed_checks": failed,
-            "provisional": True,
-            "decision_boundary": "A diagnostic score is visible for audit, but failed evidence is never assigned a rank.",
-        }
-    return {
-        "contract_version": "comparison-evidence-ranking-v1",
-        "status": "provisional_pending_oos_substitution",
-        "admitted": admitted,
-        "ranking_admitted": admitted,
-        "gated": len(results) - admitted,
-        "weights": weights,
-        "hard_gates": [
-            "minimum_completed_trades", "net_profit_factor", "positive_net_trade_edge",
-            "within_strategy_fdr", "drawdown_limit", "positive_excess_return",
-            "out_of_sample_stability",
-        ],
-    }
+    return attach_comparison_evidence_rankings(results)
 
 
 _UNIVERSE_OOS_LOCK = threading.Lock()
-_UNIVERSE_OOS_CACHE: dict[str, dict[str, Any]] = {}
 _UNIVERSE_OOS_LATEST: dict[str, dict[str, Any]] = {}
+_UNIVERSE_OOS_CACHE_CONTRACT = "universe-oos-persistent-cache-v1"
+_DEFAULT_OOS_SIGNATURES = {
+    "moving_average_crossover": ((20, 50), 51),
+    "donchian_breakout": ((55, 20), 57),
+    "ema_crossover": ((20, 50), 51),
+    "time_series_momentum": ((63,), 65),
+    "triple_sma_alignment": ((20, 50, 200), 201),
+    "rsi_mean_reversion": ((2, 10.0, 70.0), 4),
+    "bollinger_mean_reversion": ((20, 2.0), 21),
+    "zscore_mean_reversion": ((10, -1.5, 0.0), 11),
+    "pullback_uptrend": ((5, 200), 201),
+    "selloff_recovery": ((3, 5), 6),
+}
+
+
+def _oos_source_version(
+    market_db: Path, snapshot_db: Path = DEFAULT_SNAPSHOT_DB,
+) -> str:
+    connection = _connect(market_db)
+    try:
+        coverage = connection.execute(
+            "SELECT value,updated_at FROM workspace_metadata WHERE key='corporate_action_coverage'"
+        ).fetchone()
+        coverage_context = dict(coverage) if coverage else None
+    finally:
+        connection.close()
+    return semantic_source_version(
+        (
+            (market_db, (
+                ("candles", "session_date", "retrieved_at"),
+                ("instruments", "updated_at", "updated_at"),
+                ("corporate_actions", "ex_date", "retrieved_at"),
+                ("symbol_history", "effective_date", "retrieved_at"),
+                ("universe_membership_events", "effective_date", "retrieved_at"),
+                ("universe_notice_review_windows", "reviewed_through", "retrieved_at"),
+                ("universe_classification_snapshots", "snapshot_date", "retrieved_at"),
+                ("universe_lineage_intervals", "effective_date", "retrieved_at"),
+                ("cash_archive_symbol_checks", "session_date", "retrieved_at"),
+            )),
+            (snapshot_db, (
+                ("equity_size_classifications", "snapshot_date", "retrieved_at"),
+            )),
+        ),
+        context={"corporate_action_coverage": coverage_context},
+    )
+
+
+def _oos_cache_key(
+    engine: str, series_arguments: tuple[Any, ...], required_observations: int,
+) -> str:
+    signature = json.dumps(
+        {"engine": engine, "arguments": series_arguments, "required": required_observations},
+        sort_keys=True, separators=(",", ":"),
+    )
+    return f"universe_oos:{hashlib.sha256(signature.encode()).hexdigest()}"
+
+
+def _hydrate_persistent_oos_cache(market_db: Path, source_version: str) -> None:
+    stored = load_versioned_results_by_prefix(
+        market_db, "universe_oos:", _UNIVERSE_OOS_CACHE_CONTRACT, source_version,
+    )
+    with _UNIVERSE_OOS_LOCK:
+        for cache_key, envelope in stored.items():
+            if not envelope.get("default_family"):
+                continue
+            engine = str(envelope.get("engine") or "")
+            if engine in _DEFAULT_OOS_SIGNATURES:
+                _UNIVERSE_OOS_LATEST[engine] = {
+                    "database_version": source_version,
+                    "cache_key": cache_key,
+                    "evidence": envelope.get("evidence", {}),
+                }
 
 
 def _compact_walk_forward_evidence(validation: dict[str, Any], audit: dict[str, Any]) -> dict[str, Any]:
@@ -6115,12 +5915,21 @@ def _universe_oos_evidence_map(
     series_arguments: tuple[Any, ...],
     required_observations: int,
 ) -> dict[str, dict[str, Any]]:
-    stat = market_db.stat()
-    cache_key = f"universe-oos-v1:{stat.st_mtime_ns}:{stat.st_size}:{engine}:{series_arguments}:{required_observations}"
-    with _UNIVERSE_OOS_LOCK:
-        cached = _UNIVERSE_OOS_CACHE.get(cache_key)
-        if cached is not None:
-            return cached
+    source_version = _oos_source_version(market_db)
+    cache_key = _oos_cache_key(engine, series_arguments, required_observations)
+    cached = load_versioned_result(
+        market_db, cache_key, _UNIVERSE_OOS_CACHE_CONTRACT, source_version,
+    )
+    if cached is not None:
+        evidence = cached.get("evidence", {})
+        if cached.get("default_family"):
+            with _UNIVERSE_OOS_LOCK:
+                _UNIVERSE_OOS_LATEST[engine] = {
+                    "database_version": source_version,
+                    "cache_key": cache_key,
+                    "evidence": evidence,
+                }
+        return evidence
     connection = _connect(market_db)
     evidence: dict[str, dict[str, Any]] = {}
     dated_universe_cache: dict[str, dict[str, Any]] = {}
@@ -6154,16 +5963,26 @@ def _universe_oos_evidence_map(
             evidence[symbol] = _compact_walk_forward_evidence(validation, audit)
     finally:
         connection.close()
-    with _UNIVERSE_OOS_LOCK:
-        _UNIVERSE_OOS_CACHE[cache_key] = evidence
-        _UNIVERSE_OOS_LATEST[engine] = {
-            "database_version": f"{stat.st_mtime_ns}:{stat.st_size}",
-            "cache_key": cache_key,
-            "evidence": evidence,
-        }
-        if len(_UNIVERSE_OOS_CACHE) > 20:
-            oldest_key = next(iter(_UNIVERSE_OOS_CACHE))
-            _UNIVERSE_OOS_CACHE.pop(oldest_key, None)
+    default_family = _DEFAULT_OOS_SIGNATURES.get(engine) == (
+        tuple(series_arguments), required_observations,
+    )
+    envelope = {
+        "engine": engine,
+        "series_arguments": list(series_arguments),
+        "required_observations": required_observations,
+        "default_family": default_family,
+        "evidence": evidence,
+    }
+    store_versioned_result(
+        market_db, cache_key, _UNIVERSE_OOS_CACHE_CONTRACT, source_version, envelope,
+    )
+    if default_family:
+        with _UNIVERSE_OOS_LOCK:
+            _UNIVERSE_OOS_LATEST[engine] = {
+                "database_version": source_version,
+                "cache_key": cache_key,
+                "evidence": evidence,
+            }
     return evidence
 
 
@@ -6171,217 +5990,7 @@ def _attach_oos_evidence_rankings(
     results: list[dict[str, Any]],
     oos_evidence: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    hypotheses = []
-    for row in results:
-        evidence = oos_evidence.get(str(row.get("symbol") or ""), {})
-        probability = evidence.get("net_trade_edge_p_value")
-        if evidence.get("status") == "ready" and probability is not None:
-            hypotheses.append({
-                "status": "ready",
-                "symbol": row.get("symbol"),
-                "net_trade_edge_p_value": probability,
-            })
-    oos_fdr = _attach_benjamini_hochberg_fdr(hypotheses)
-    q_values = {row["symbol"]: row.get("net_trade_edge_q_value") for row in hypotheses}
-    weights = {
-        "oos_net_profit_factor": 20.0,
-        "oos_net_trade_edge": 15.0,
-        "oos_trade_sample": 10.0,
-        "oos_adjusted_confidence": 15.0,
-        "oos_drawdown_control": 10.0,
-        "oos_excess_return": 10.0,
-        "oos_exposure_quality": 5.0,
-        "oos_turnover_efficiency": 5.0,
-        "oos_cost_efficiency": 5.0,
-        "period_stability": 5.0,
-    }
-    admitted = 0
-    for row in results:
-        symbol = str(row.get("symbol") or "")
-        evidence = oos_evidence.get(symbol, {})
-        row["oos_evidence"] = evidence
-        metrics = evidence.get("metrics") or {}
-        q_value = q_values.get(symbol)
-        if row.get("status") != "ready" or evidence.get("status") != "ready":
-            failed = list(evidence.get("failed_checks") or ["full_history_walk_forward_unavailable"])
-            row["evidence_ranking"] = {
-                "contract_version": "full-history-oos-evidence-ranking-v2",
-                "status": "gated", "ranking_admissible": False,
-                "score": None, "diagnostic_score": None,
-                "failed_checks": failed,
-                "oos_evidence_status": evidence.get("status") or "unavailable",
-            }
-            continue
-        profit_factor = float(metrics.get("median_net_profit_factor") or 0.0)
-        edge = float(metrics.get("median_net_trade_expectancy_pct") or 0.0)
-        trades = int(metrics.get("completed_trades") or 0)
-        drawdown = float(metrics.get("worst_net_drawdown_pct") or -100.0)
-        excess = float(metrics.get("median_excess_return_pct") or 0.0)
-        exposure = float(metrics.get("median_exposure_pct") or 0.0)
-        positive_ratio = float(metrics.get("positive_fold_ratio") or 0.0)
-        completed_sells = int(metrics.get("completed_sells") or 0)
-        evaluated_sessions = int(metrics.get("evaluated_test_sessions") or 0)
-        turnover_rate = completed_sells / max(1.0, evaluated_sessions / 252.0)
-        cost_drag = max(0.0, float(metrics.get("median_cost_drag_pct") or 0.0))
-        components = {
-            "oos_net_profit_factor": weights["oos_net_profit_factor"] * _clamp_unit((profit_factor - 1.0) / 1.5),
-            "oos_net_trade_edge": weights["oos_net_trade_edge"] * _clamp_unit(edge / 5.0),
-            "oos_trade_sample": weights["oos_trade_sample"] * _clamp_unit(trades / 25.0),
-            "oos_adjusted_confidence": weights["oos_adjusted_confidence"] * _clamp_unit((0.10 - float(q_value)) / 0.10) if q_value is not None else 0.0,
-            "oos_drawdown_control": weights["oos_drawdown_control"] * _clamp_unit((drawdown + 30.0) / 30.0),
-            "oos_excess_return": weights["oos_excess_return"] * _clamp_unit((excess + 10.0) / 30.0),
-            "oos_exposure_quality": weights["oos_exposure_quality"] * _clamp_unit(1.0 - abs(exposure - 50.0) / 50.0),
-            "oos_turnover_efficiency": weights["oos_turnover_efficiency"] * _clamp_unit(1.0 - turnover_rate / 20.0),
-            "oos_cost_efficiency": weights["oos_cost_efficiency"] * _clamp_unit(1.0 - cost_drag / 10.0),
-            "period_stability": weights["period_stability"] * _clamp_unit(positive_ratio),
-        }
-        checks = {
-            "minimum_admitted_test_folds": int(metrics.get("admitted_test_folds") or 0) >= 3,
-            "minimum_completed_trades": trades >= 15,
-            "positive_fold_ratio": positive_ratio >= 0.60,
-            "net_profit_factor": profit_factor >= 1.10,
-            "positive_net_trade_edge": edge > 0,
-            "oos_within_strategy_fdr": q_value is not None and float(q_value) <= 0.05,
-            "drawdown_limit": drawdown >= -25.0,
-            "positive_excess_return": excess > 0,
-        }
-        failed = [name for name, passed in checks.items() if not passed]
-        diagnostic = sum(components.values())
-        ranking_admissible = not failed
-        admitted += int(ranking_admissible)
-        row["evidence_ranking"] = {
-            "contract_version": "full-history-oos-evidence-ranking-v2",
-            "status": "admitted" if ranking_admissible else "gated",
-            "ranking_admissible": ranking_admissible,
-            "score": _round(diagnostic, 2) if ranking_admissible else None,
-            "diagnostic_score": _round(diagnostic, 2),
-            "components": {name: _round(value, 2) for name, value in components.items()},
-            "weights": weights,
-            "checks": checks,
-            "failed_checks": failed,
-            "oos_net_trade_edge_p_value": evidence.get("net_trade_edge_p_value"),
-            "oos_net_trade_edge_q_value": q_value,
-            "oos_metrics": metrics,
-            "decision_boundary": "Only point-in-time-admitted, full-history walk-forward evidence can receive a ranking score.",
-        }
-    return {
-        "contract_version": "full-history-oos-evidence-ranking-v2",
-        "status": "ready",
-        "ranking_admitted": admitted,
-        "gated": len(results) - admitted,
-        "weights": weights,
-        "oos_multiple_testing": oos_fdr,
-        "point_in_time_membership_enforced_per_fold": True,
-    }
-
-
-EQUITY_DELIVERY_COST_SCHEDULE = {
-    "schedule_version": "zerodha-nse-equity-delivery-2026-03-v1",
-    "effective_from": "2026-03-01",
-    "brokerage_rate": 0.0,
-    "stt_rate_each_side": 0.001,
-    "nse_transaction_charge_per_crore": 306.99,
-    "nse_ipft_per_crore": 0.01,
-    "sebi_charge_per_crore": 10.0,
-    "gst_rate": 0.18,
-    "stamp_duty_buy_rate": 0.00015,
-    "dp_charge_sell_inr": 15.34,
-    "sources": [
-        "https://zerodha.com/charges/",
-        "https://zerodha.com/brokerage-calculator/",
-        "https://nsearchives.nseindia.com/content/circulars/FA73061.pdf",
-    ],
-}
-
-DEFAULT_BACKTEST_COST_CONFIG = {
-    "position_capital_inr": 50000.0,
-    "slippage_bps_each_side": 5.0,
-    "market_impact_bps_each_side": 0.0,
-    "include_dp_charge": True,
-}
-
-
-def _normalise_cost_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
-    values = dict(DEFAULT_BACKTEST_COST_CONFIG)
-    if config:
-        values.update(config)
-    capital = float(values["position_capital_inr"])
-    slippage = float(values["slippage_bps_each_side"])
-    impact = float(values["market_impact_bps_each_side"])
-    if not math.isfinite(capital) or capital <= 0:
-        raise ValueError("invalid_position_capital")
-    if not math.isfinite(slippage) or slippage < 0 or slippage > 500:
-        raise ValueError("invalid_slippage_bps")
-    if not math.isfinite(impact) or impact < 0 or impact > 500:
-        raise ValueError("invalid_market_impact_bps")
-    return {
-        "position_capital_inr": capital,
-        "slippage_bps_each_side": slippage,
-        "market_impact_bps_each_side": impact,
-        "include_dp_charge": bool(values.get("include_dp_charge", True)),
-    }
-
-
-def _equity_delivery_side_charges(
-    turnover_inr: float,
-    side: str,
-    config: dict[str, Any],
-) -> dict[str, float]:
-    turnover = max(0.0, float(turnover_inr))
-    if side not in {"buy", "sell"}:
-        raise ValueError("invalid_trade_side")
-    schedule = EQUITY_DELIVERY_COST_SCHEDULE
-    brokerage = turnover * float(schedule["brokerage_rate"])
-    stt = turnover * float(schedule["stt_rate_each_side"])
-    exchange = turnover * float(schedule["nse_transaction_charge_per_crore"]) / 10_000_000
-    ipft = turnover * float(schedule["nse_ipft_per_crore"]) / 10_000_000
-    sebi = turnover * float(schedule["sebi_charge_per_crore"]) / 10_000_000
-    gst = float(schedule["gst_rate"]) * (brokerage + exchange + ipft + sebi)
-    stamp = turnover * float(schedule["stamp_duty_buy_rate"]) if side == "buy" else 0.0
-    dp = float(schedule["dp_charge_sell_inr"]) if side == "sell" and config["include_dp_charge"] and turnover > 0 else 0.0
-    slippage = turnover * float(config["slippage_bps_each_side"]) / 10_000
-    market_impact = turnover * float(config["market_impact_bps_each_side"]) / 10_000
-    components = {
-        "brokerage": brokerage,
-        "stt": stt,
-        "exchange_transaction": exchange,
-        "nse_ipft": ipft,
-        "sebi": sebi,
-        "gst": gst,
-        "stamp_duty": stamp,
-        "dp_charge": dp,
-        "slippage": slippage,
-        "market_impact": market_impact,
-    }
-    components["total"] = sum(components.values())
-    return components
-
-
-def equity_delivery_cost_calculator(
-    buy_turnover_inr: float,
-    sell_turnover_inr: float,
-    config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Estimate Zerodha/NSE equity-delivery costs for one buy and one sell."""
-    assumptions = _normalise_cost_config(config)
-    buy = _equity_delivery_side_charges(buy_turnover_inr, "buy", assumptions)
-    sell = _equity_delivery_side_charges(sell_turnover_inr, "sell", assumptions)
-    total = buy["total"] + sell["total"]
-    gross_turnover = max(0.0, float(buy_turnover_inr)) + max(0.0, float(sell_turnover_inr))
-    return {
-        "ok": True,
-        "contract_version": "equity-delivery-cost-v1",
-        "segment": "NSE equity delivery",
-        "schedule": EQUITY_DELIVERY_COST_SCHEDULE,
-        "assumptions": assumptions,
-        "buy_turnover_inr": _round(float(buy_turnover_inr)),
-        "sell_turnover_inr": _round(float(sell_turnover_inr)),
-        "buy_charges": {key: _round(value, 4) for key, value in buy.items()},
-        "sell_charges": {key: _round(value, 4) for key, value in sell.items()},
-        "total_cost_inr": _round(total, 4),
-        "total_cost_pct_of_gross_turnover": _round(100 * total / gross_turnover, 6) if gross_turnover else None,
-        "rate_basis": "Current published schedule applied uniformly; historical rate changes are not reconstructed.",
-    }
+    return attach_oos_evidence_rankings(results, oos_evidence)
 
 
 def _moving_average_crossover_series(
@@ -7313,6 +6922,90 @@ def _selloff_recovery_series(
     return result
 
 
+# Compatibility adapters preserve every existing engine callback signature while
+# the frozen signal rules live in focused strategy-family components. Execution,
+# costs and portfolio metrics remain owned by the engine and are injected here.
+def _moving_average_crossover_series(
+    rows: list[Any], fast_window: int = 20, slow_window: int = 50,
+) -> dict[str, Any]:
+    return _moving_average_crossover_component(
+        rows, fast_window, slow_window, metrics=_long_cash_metrics,
+    )
+
+
+def _donchian_breakout_series(
+    rows: list[Any], entry_window: int = 55, exit_window: int = 20,
+) -> dict[str, Any]:
+    return _donchian_breakout_component(
+        rows, entry_window, exit_window, metrics=_long_cash_metrics,
+    )
+
+
+def _ema_crossover_series(
+    rows: list[Any], fast_window: int = 20, slow_window: int = 50,
+) -> dict[str, Any]:
+    return _ema_crossover_component(
+        rows, fast_window, slow_window, metrics=_long_cash_metrics,
+    )
+
+
+def _time_series_momentum_series(
+    rows: list[Any], lookback: int = 63,
+) -> dict[str, Any]:
+    return _time_series_momentum_component(rows, lookback, metrics=_long_cash_metrics)
+
+
+def _triple_sma_alignment_series(
+    rows: list[Any], fast_window: int = 20, medium_window: int = 50,
+    slow_window: int = 200,
+) -> dict[str, Any]:
+    return _triple_sma_alignment_component(
+        rows, fast_window, medium_window, slow_window, metrics=_long_cash_metrics,
+    )
+
+
+def _rsi_mean_reversion_series(
+    rows: list[Any], period: int = 2, entry_rsi: float = 10.0,
+    exit_rsi: float = 70.0,
+) -> dict[str, Any]:
+    return _rsi_mean_reversion_component(
+        rows, period, entry_rsi, exit_rsi, metrics=_long_cash_metrics,
+    )
+
+
+def _bollinger_mean_reversion_series(
+    rows: list[Any], window: int = 20, deviations: float = 2.0,
+) -> dict[str, Any]:
+    return _bollinger_mean_reversion_component(
+        rows, window, deviations, metrics=_long_cash_metrics,
+    )
+
+
+def _zscore_mean_reversion_series(
+    rows: list[Any], window: int = 10, entry_z: float = -1.5,
+    exit_z: float = 0.0,
+) -> dict[str, Any]:
+    return _zscore_mean_reversion_component(
+        rows, window, entry_z, exit_z, metrics=_long_cash_metrics,
+    )
+
+
+def _pullback_uptrend_series(
+    rows: list[Any], pullback_window: int = 5, trend_window: int = 200,
+) -> dict[str, Any]:
+    return _pullback_uptrend_component(
+        rows, pullback_window, trend_window, metrics=_long_cash_metrics,
+    )
+
+
+def _selloff_recovery_series(
+    rows: list[Any], down_sessions: int = 3, exit_window: int = 5,
+) -> dict[str, Any]:
+    return _selloff_recovery_component(
+        rows, down_sessions, exit_window, metrics=_long_cash_metrics,
+    )
+
+
 def _chronological_holdout_validation(
     rows: list[Any],
     series_function: Any,
@@ -7859,9 +7552,7 @@ def selloff_recovery(
 
 
 _CROSS_STRATEGY_FDR_LOCK = threading.Lock()
-_OOS_PRECOMPUTE_STATE: dict[str, Any] = {
-    "status": "idle", "database_version": None, "completed_engines": [], "current_engine": None, "errors": {},
-}
+_ACTIVE_BACKGROUND_JOBS: set[str] = set()
 
 
 def _oos_strategy_runners() -> tuple[tuple[str, Any], ...]:
@@ -7879,94 +7570,57 @@ def _oos_strategy_runners() -> tuple[tuple[str, Any], ...]:
     )
 
 
-def _precompute_missing_oos_strategies(market_db: Path, database_version: str) -> None:
+def _precompute_missing_oos_strategies(
+    market_db: Path, database_version: str, job_id: str,
+) -> None:
     errors: dict[str, str] = {}
-    for engine, runner in _oos_strategy_runners():
-        with _UNIVERSE_OOS_LOCK:
-            cached = _UNIVERSE_OOS_LATEST.get(engine)
-        if cached and cached.get("database_version") == database_version:
-            continue
-        with _CROSS_STRATEGY_FDR_LOCK:
-            _OOS_PRECOMPUTE_STATE["current_engine"] = engine
-        try:
-            runner(market_db)
-        except Exception as error:  # background progress must survive one failed family
-            errors[engine] = str(error)
-        with _UNIVERSE_OOS_LOCK:
-            completed = sorted(
-                name for name, item in _UNIVERSE_OOS_LATEST.items()
-                if item.get("database_version") == database_version
+    try:
+        for engine, runner in _oos_strategy_runners():
+            with _UNIVERSE_OOS_LOCK:
+                cached = _UNIVERSE_OOS_LATEST.get(engine)
+                completed = sorted(
+                    name for name, item in _UNIVERSE_OOS_LATEST.items()
+                    if item.get("database_version") == database_version
+                )
+            if cached and cached.get("database_version") == database_version:
+                continue
+            update_job(
+                market_db, job_id, len(completed), current_stage=engine,
+                errors=errors, detail={"completed_engines": completed},
             )
+            try:
+                runner(market_db)
+            except Exception as error:  # one family must not hide later progress
+                errors[engine] = str(error)
+            with _UNIVERSE_OOS_LOCK:
+                completed = sorted(
+                    name for name, item in _UNIVERSE_OOS_LATEST.items()
+                    if item.get("database_version") == database_version
+                )
+            update_job(
+                market_db, job_id, len(completed), current_stage=engine,
+                errors=errors, detail={"completed_engines": completed},
+            )
+        finish_job(
+            market_db, job_id,
+            "complete" if not errors else "complete_with_errors", errors,
+        )
+    except Exception as error:
+        errors["background_job"] = str(error)
+        finish_job(market_db, job_id, "failed", errors)
+    finally:
         with _CROSS_STRATEGY_FDR_LOCK:
-            _OOS_PRECOMPUTE_STATE["completed_engines"] = completed
-            _OOS_PRECOMPUTE_STATE["errors"] = dict(errors)
-    with _CROSS_STRATEGY_FDR_LOCK:
-        _OOS_PRECOMPUTE_STATE["status"] = "complete" if not errors else "complete_with_errors"
-        _OOS_PRECOMPUTE_STATE["current_engine"] = None
+            _ACTIVE_BACKGROUND_JOBS.discard(job_id)
+
+
+def background_research_jobs(
+    market_db: Path = DEFAULT_MARKET_DB, limit: int = 20,
+) -> dict[str, Any]:
+    return list_jobs(market_db, limit)
 
 
 def _cross_strategy_fdr_from_payloads(payloads: list[dict[str, Any]], alpha: float = 0.05) -> dict[str, Any]:
-    hypotheses: list[dict[str, Any]] = []
-    for payload in payloads:
-        engine = str(payload.get("engine") or "unknown")
-        for row in payload.get("results", []):
-            base_ranking = row.get("evidence_ranking") or {}
-            probability = base_ranking.get("oos_net_trade_edge_p_value")
-            if row.get("status") != "ready" or probability is None:
-                continue
-            hypotheses.append({
-                "status": "ready",
-                "engine": engine,
-                "symbol": row.get("symbol"),
-                "net_trade_edge_p_value": probability,
-                "base_evidence_ranking": base_ranking,
-            })
-    contract = _attach_benjamini_hochberg_fdr(hypotheses, alpha)
-    by_engine: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
-    for row in hypotheses:
-        base_ranking = row.get("base_evidence_ranking") or {}
-        global_fdr_passed = bool(row["net_trade_edge_q_value"] is not None and row["net_trade_edge_q_value"] <= alpha)
-        ranking_admissible = bool(base_ranking.get("ranking_admissible") and global_fdr_passed)
-        failed_checks = list(base_ranking.get("failed_checks") or [])
-        if not global_fdr_passed:
-            failed_checks.append("all_strategy_fdr")
-        by_engine[row["engine"]][str(row["symbol"])] = {
-            "raw_p_value": row["net_trade_edge_p_value"],
-            "cross_strategy_q_value": row["net_trade_edge_q_value"],
-            "status": row["multiple_testing_status"],
-            "evidence_ranking": {
-                **base_ranking,
-                "contract_version": "cross-strategy-evidence-ranking-v1",
-                "ranking_admissible": ranking_admissible,
-                "status": "admitted" if ranking_admissible else "gated",
-                "score": base_ranking.get("diagnostic_score") if ranking_admissible else None,
-                "failed_checks": failed_checks,
-                "global_fdr_passed": global_fdr_passed,
-            },
-        }
-    strategy_counts = {
-        engine: {
-            "tested_hypotheses": len(rows),
-            "fdr_q_below_alpha": sum(item["cross_strategy_q_value"] <= alpha for item in rows.values()),
-        }
-        for engine, rows in by_engine.items()
-    }
-    return {
-        "ok": True,
-        "contract_version": "cross-strategy-oos-benjamini-hochberg-fdr-v2",
-        "family": "all_default_strategy_stock_pairs_full_history_oos",
-        "alpha": alpha,
-        "tested_hypotheses": contract["tested_hypotheses"],
-        "raw_p_below_alpha": contract["raw_p_below_alpha"],
-        "fdr_q_below_alpha": contract["fdr_q_below_alpha"],
-        "ranking_admitted": sum(
-            item["evidence_ranking"]["ranking_admissible"]
-            for rows in by_engine.values() for item in rows.values()
-        ),
-        "strategy_counts": strategy_counts,
-        "by_engine": dict(by_engine),
-        "interpretation": "Controls the expected false-discovery proportion across all full-history, point-in-time-admitted default stock-by-strategy OOS tests in one combined family.",
-    }
+    return cross_strategy_fdr_from_payloads(payloads, alpha)
 
 
 def cross_strategy_multiple_testing(
@@ -7981,30 +7635,51 @@ def cross_strategy_multiple_testing(
     hung. Individual strategy endpoints populate this cache on demand; an
     explicit maintenance request may still opt into the complete build.
     """
-    stat = market_db.stat()
-    database_version = f"{stat.st_mtime_ns}:{stat.st_size}"
+    database_version = _oos_source_version(market_db)
+    _hydrate_persistent_oos_cache(market_db, database_version)
     required_engines = [engine for engine, _runner in _oos_strategy_runners()]
+    job_id = f"oos-family:{database_version}"
     with _UNIVERSE_OOS_LOCK:
         available = {
             engine: item for engine, item in _UNIVERSE_OOS_LATEST.items()
             if item.get("database_version") == database_version
         }
     with _CROSS_STRATEGY_FDR_LOCK:
-        running_for_version = (
-            _OOS_PRECOMPUTE_STATE.get("status") == "running"
-            and _OOS_PRECOMPUTE_STATE.get("database_version") == database_version
-        )
+        running_for_version = job_id in _ACTIVE_BACKGROUND_JOBS
         if start_background and len(available) < len(required_engines) and not running_for_version:
-            _OOS_PRECOMPUTE_STATE.update({
-                "status": "running", "database_version": database_version,
-                "completed_engines": sorted(available), "current_engine": None, "errors": {},
-            })
+            start_job(
+                market_db, job_id, "full_history_oos_strategy_family",
+                database_version, len(required_engines), len(available),
+                {"completed_engines": sorted(available)},
+            )
+            _ACTIVE_BACKGROUND_JOBS.add(job_id)
             threading.Thread(
                 target=_precompute_missing_oos_strategies,
-                args=(market_db, database_version),
+                args=(market_db, database_version, job_id),
                 name="workspace-oos-precompute", daemon=True,
             ).start()
-        progress = dict(_OOS_PRECOMPUTE_STATE)
+        active_for_version = job_id in _ACTIVE_BACKGROUND_JOBS
+    progress = job_status(market_db, job_id) or {
+        "contract_version": "background-research-job-v1",
+        "job_id": job_id,
+        "job_type": "full_history_oos_strategy_family",
+        "source_version": database_version,
+        "status": "idle",
+        "completed_units": len(available),
+        "total_units": len(required_engines),
+        "current_stage": None,
+        "progress_pct": round(100 * len(available) / len(required_engines), 1),
+        "errors": {},
+        "detail": {"completed_engines": sorted(available)},
+        "terminal": False,
+    }
+    if progress.get("status") == "running" and not active_for_version:
+        progress = finish_job(
+            market_db, job_id, "interrupted",
+            {"process": "server_restarted_before_job_completed"},
+        )
+    progress["current_engine"] = progress.get("current_stage")
+    progress["completed_engines"] = progress.get("detail", {}).get("completed_engines", [])
 
     payloads = []
     for engine, item in available.items():
@@ -8046,7 +7721,7 @@ def cross_strategy_multiple_testing(
         connection.close()
     background_running = (
         progress.get("status") == "running"
-        and progress.get("database_version") == database_version
+        and progress.get("source_version") == database_version
     )
     result.update({
         "status": (
@@ -8066,12 +7741,12 @@ def cross_strategy_multiple_testing(
     return result
 
 
-def screener_local(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
+def _screener_local_uncached(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
     rows = _technical_rows(market_db)
     return {"ok": True, "as_of_date": max((row["as_of_date"] for row in rows), default=None), "rows": rows, "coverage": {"ready": sum(row["status"] == "ready" for row in rows)}}
 
 
-def factor_research(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
+def _factor_research_uncached(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
     connection = _connect(market_db)
     try:
         cached = _latest_snapshot(connection, "factor-research-foundation")
@@ -8121,7 +7796,7 @@ def factor_research(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
     return {"ok": True, "as_of_date": max((row["as_of_date"] for row in technical), default=None), "rows": rows, "coverage": {"research_eligible": sum(row["research_eligible"] for row in rows)}}
 
 
-def stock_ytd(market_db: Path = DEFAULT_MARKET_DB, snapshot_db: Path = DEFAULT_SNAPSHOT_DB) -> dict[str, Any]:
+def _stock_ytd_uncached(market_db: Path = DEFAULT_MARKET_DB, snapshot_db: Path = DEFAULT_SNAPSHOT_DB) -> dict[str, Any]:
     connection = _connect(market_db)
     try:
         cached = _latest_snapshot(connection, "nifty500-stock-ytd")
@@ -8164,6 +7839,56 @@ def stock_ytd(market_db: Path = DEFAULT_MARKET_DB, snapshot_db: Path = DEFAULT_S
     technical = _technical_rows(market_db)
     rows = [{"symbol": row["symbol"], "name": row["name"], "sector": row["sector"], "ltp": row["close"], "price_date": row["as_of_date"], "ytd_performance_pct": row["ytd_return_pct"], "from_20dma_pct": row["vs_20dma_pct"], "from_50dma_pct": row["vs_50dma_pct"], "from_200dma_pct": row["vs_200dma_pct"], "status": row["status"]} for row in technical]
     return {"ok": True, "as_of_date": max((row["as_of_date"] for row in technical), default=None), "rows": rows, "coverage": {"ready": sum(row["status"] == "ready" for row in rows), "partial_history": sum(row["status"] != "ready" for row in rows)}}
+
+
+_STABLE_STOCK_RESEARCH_SOURCES = (
+    ("candles", "session_date", "retrieved_at"),
+    ("instruments", "updated_at", "updated_at"),
+    ("workspace_snapshots", "as_of_date", "created_at"),
+)
+
+
+def _stable_stock_research_contract(
+    market_db: Path, cache_key: str, contract_version: str, builder: Any,
+) -> dict[str, Any]:
+    source_version = semantic_source_version(
+        ((market_db, _STABLE_STOCK_RESEARCH_SOURCES),)
+    )
+    cached = load_versioned_result(
+        market_db, cache_key, contract_version, source_version,
+    )
+    if cached is not None:
+        return cached
+    payload = builder()
+    if payload.get("ok"):
+        store_versioned_result(
+            market_db, cache_key, contract_version, source_version, payload,
+        )
+    return payload
+
+
+def screener_local(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
+    return _stable_stock_research_contract(
+        market_db, "screener_local", "local-technical-screen-v1",
+        lambda: _screener_local_uncached(market_db),
+    )
+
+
+def factor_research(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:
+    return _stable_stock_research_contract(
+        market_db, "factor_research", "factor-research-v1",
+        lambda: _factor_research_uncached(market_db),
+    )
+
+
+def stock_ytd(
+    market_db: Path = DEFAULT_MARKET_DB,
+    snapshot_db: Path = DEFAULT_SNAPSHOT_DB,
+) -> dict[str, Any]:
+    return _stable_stock_research_contract(
+        market_db, "stock_ytd", "stock-ytd-v1",
+        lambda: _stock_ytd_uncached(market_db, snapshot_db),
+    )
 
 
 def seasonality_summary(market_db: Path = DEFAULT_MARKET_DB) -> dict[str, Any]:

@@ -19,6 +19,7 @@ from workspace_engine import (
     DEFAULT_MARKET_DB,
     KITE,
     bollinger_mean_reversion,
+    background_research_jobs,
     build_opportunity_feature_ledger,
     build_market_regime_ledger,
     build_sector_trend_ledger,
@@ -41,6 +42,12 @@ from workspace_engine import (
     market_regime_history,
     nifty50_ytd,
     point_in_time_universe_contract,
+    import_portfolio_tradebook,
+    portfolio_overview,
+    portfolio_performance,
+    portfolio_risk_analysis,
+    record_portfolio_cash_flow,
+    record_portfolio_transaction,
     opportunity_feature_ledger,
     sector_trend_history,
     stock_leadership_history,
@@ -153,6 +160,15 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/dashboard/overview":
             self._local_contract(lambda: dashboard_overview(self.market_db))
+            return
+        if path == "/api/portfolio/overview":
+            self._local_contract(lambda: portfolio_overview(self.market_db))
+            return
+        if path == "/api/portfolio/performance":
+            self._local_contract(lambda: portfolio_performance(self.market_db))
+            return
+        if path == "/api/portfolio/risk-analysis":
+            self._local_contract(lambda: portfolio_risk_analysis(self.market_db))
             return
         if path == "/api/market-sentiment/domestic-core":
             self._local_contract(lambda: domestic_core(self.market_db, self.snapshot_db))
@@ -296,6 +312,17 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         if path == "/api/research/opportunity-board-release":
             payload = opportunity_board_release_status(self.market_db)
             self._json(200 if payload.get("ok") else 404, payload)
+            return
+        if path == "/api/research/jobs":
+            query = parse_qs(parsed.query)
+            try:
+                payload = background_research_jobs(
+                    self.market_db, limit=int(query.get("limit", ["20"])[0])
+                )
+            except ValueError as error:
+                self._json(400, {"ok": False, "reason": str(error)})
+                return
+            self._json(200, payload)
             return
         if path == "/api/dashboard/seasonality-summary":
             self._local_contract(lambda: seasonality_summary(self.market_db))
@@ -530,6 +557,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         if parsed.path not in {
             "/api/kite/session", "/api/kite/disconnect",
             "/api/workspace/snapshots/refresh", "/api/workspace/global-risk/refresh",
+            "/api/portfolio/transactions",
+            "/api/portfolio/cash-flows", "/api/portfolio/import",
         }:
             self._json(404, {"ok": False, "reason": "not_found"})
             return
@@ -557,13 +586,47 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         except ValueError:
             self._json(400, {"ok": False, "reason": "invalid_content_length"})
             return
-        if length < 0 or length > 16_384:
+        maximum_length = 2_000_000 if parsed.path == "/api/portfolio/import" else 16_384
+        if length < 0 or length > maximum_length:
             self._json(413, {"ok": False, "reason": "payload_too_large"})
             return
         try:
             body = json.loads(self.rfile.read(length) or b"{}")
         except (json.JSONDecodeError, UnicodeDecodeError):
             self._json(400, {"ok": False, "reason": "invalid_json"})
+            return
+        if parsed.path == "/api/portfolio/transactions":
+            try:
+                payload = record_portfolio_transaction(self.market_db, body)
+            except ValueError as error:
+                self._json(400, {"ok": False, "reason": str(error)})
+                return
+            except (sqlite3.Error, OSError) as error:
+                self._json(503, {"ok": False, "reason": "portfolio_store_unavailable", "detail": str(error)})
+                return
+            self._json(201, payload)
+            return
+        if parsed.path == "/api/portfolio/cash-flows":
+            try:
+                payload = record_portfolio_cash_flow(self.market_db, body)
+            except ValueError as error:
+                self._json(400, {"ok": False, "reason": str(error)})
+                return
+            except (sqlite3.Error, OSError) as error:
+                self._json(503, {"ok": False, "reason": "portfolio_store_unavailable", "detail": str(error)})
+                return
+            self._json(201, payload)
+            return
+        if parsed.path == "/api/portfolio/import":
+            try:
+                payload = import_portfolio_tradebook(self.market_db, body)
+            except ValueError as error:
+                self._json(400, {"ok": False, "reason": str(error)})
+                return
+            except (sqlite3.Error, OSError) as error:
+                self._json(503, {"ok": False, "reason": "portfolio_import_unavailable", "detail": str(error)})
+                return
+            self._json(200 if payload.get("duplicate") else 201, payload)
             return
         if parsed.path == "/api/kite/disconnect":
             KITE.disconnect()

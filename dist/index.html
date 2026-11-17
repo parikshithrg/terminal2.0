@@ -55,7 +55,7 @@
         <button class="nav-item" id="fnoNav" type="button"><span>03</span>F&amp;O positioning</button>
         <button class="nav-item" id="stockResearchNav" type="button"><span>04</span>Stock research</button>
         <div class="nav-group-label">Capital</div>
-        <button class="nav-item future" type="button" disabled><span>05</span>Portfolio</button>
+        <button class="nav-item" id="portfolioNav" type="button"><span>05</span>Portfolio</button>
         <button class="nav-item future" type="button" disabled><span>06</span>Historical regimes</button>
       </nav>
       <div class="sidebar-foot">
@@ -466,6 +466,142 @@
             </footer>
           </article>
 
+        </section>
+      </div>
+
+      <div class="page-view" id="portfolioView" hidden>
+        <section class="page-heading">
+          <div>
+            <span class="eyebrow">CAPITAL / PORTFOLIO</span>
+            <h1>Long-term holdings</h1>
+          </div>
+          <div class="heading-meta"><span>Latest stored valuation</span><strong id="portfolioAsOf">—</strong></div>
+        </section>
+
+        <section class="portfolio-summary-strip" aria-label="Portfolio summary">
+          <article><span>MARKET VALUE</span><strong id="portfolioMarketValue">₹—</strong><small>Latest completed-session closes</small></article>
+          <article><span>COST BASIS</span><strong id="portfolioCostBasis">₹—</strong><small>Moving weighted average</small></article>
+          <article><span>UNREALISED P&amp;L</span><strong id="portfolioUnrealised">₹—</strong><small id="portfolioUnrealisedPct">Return —</small></article>
+          <article><span>REALISED P&amp;L</span><strong id="portfolioRealised">₹—</strong><small>Recorded disposals</small></article>
+          <article><span>POSITIONS</span><strong id="portfolioPositionCount">—</strong><small id="portfolioPriceCoverage">— priced</small></article>
+          <article><span>CASH BALANCE</span><strong id="portfolioCashBalance">₹—</strong><small id="portfolioCashMeta">Reconciliation pending</small></article>
+        </section>
+
+        <section class="portfolio-grid">
+          <article class="card span-4 portfolio-entry-card">
+            <header class="card-header"><div><span class="card-kicker">LOCAL LEDGER</span><h2>Add transaction</h2></div><span class="state-pill neutral">LOCAL ONLY</span></header>
+            <form id="portfolioTransactionForm" class="portfolio-form">
+              <label>Trade date<input id="portfolioTradeDate" name="tradeDate" type="date" required></label>
+              <label>Symbol<input id="portfolioSymbol" name="symbol" type="text" maxlength="40" placeholder="RELIANCE" autocomplete="off" required></label>
+              <label>Side<select id="portfolioSide" name="side"><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label>
+              <label>Quantity<input id="portfolioQuantity" name="quantity" type="number" min="0.000001" step="0.000001" required></label>
+              <label>Price (₹)<input id="portfolioPrice" name="price" type="number" min="0.01" step="0.01" required></label>
+              <label>Fees (₹)<input id="portfolioFees" name="fees" type="number" min="0" step="0.01" value="0"></label>
+              <label class="portfolio-notes">Notes<input id="portfolioNotes" name="notes" type="text" maxlength="500" placeholder="Optional reference"></label>
+              <button class="primary-button" id="portfolioSaveButton" type="submit">Add to ledger</button>
+            </form>
+            <p class="portfolio-boundary">The ledger records completed transactions and values holdings from stored EOD closes. It does not place orders or consume trading signals.</p>
+          </article>
+
+          <article class="card span-8 portfolio-holdings-card">
+            <header class="card-header">
+              <div><span class="card-kicker">CURRENT HOLDINGS</span><h2>Allocation and valuation</h2></div>
+              <span class="micro-copy" id="portfolioHoldingCount">— holdings</span>
+            </header>
+            <div class="portfolio-table-wrap">
+              <table class="portfolio-table">
+                <thead><tr><th>Stock</th><th>Quantity</th><th>Average cost</th><th>Close</th><th>Market value</th><th>Unrealised</th><th>Weight</th></tr></thead>
+                <tbody id="portfolioHoldingsBody"><tr><td colspan="7">Loading local portfolio.</td></tr></tbody>
+              </table>
+            </div>
+            <p class="supplement-note" id="portfolioMethodNote">Completed-session valuation. Cash-flow-neutral performance and Nifty 50 comparison are published below when the ledger and price history pass their gates.</p>
+          </article>
+
+          <article class="card span-4 portfolio-cash-card">
+            <header class="card-header"><div><span class="card-kicker">CASH FLOWS</span><h2>Record capital and income</h2></div><span class="micro-copy" id="portfolioCashFlowCount">— records</span></header>
+            <form id="portfolioCashFlowForm" class="portfolio-form">
+              <label>Date<input id="portfolioCashFlowDate" type="date" required></label>
+              <label>Type<select id="portfolioCashFlowType"><option value="CONTRIBUTION">Contribution</option><option value="WITHDRAWAL">Withdrawal</option><option value="DIVIDEND">Dividend</option><option value="INTEREST">Interest</option><option value="TAX">Tax</option><option value="FEE">Fee</option></select></label>
+              <label class="portfolio-notes">Amount (₹)<input id="portfolioCashFlowAmount" type="number" min="0.01" step="0.01" required></label>
+              <label class="portfolio-notes">Notes<input id="portfolioCashFlowNotes" type="text" maxlength="500" placeholder="Optional reference"></label>
+              <button class="primary-button" id="portfolioCashFlowButton" type="submit">Add cash flow</button>
+            </form>
+            <div class="portfolio-mini-list" id="portfolioCashFlowList"><p>No cash flows recorded.</p></div>
+          </article>
+
+          <article class="card span-4 portfolio-import-card">
+            <header class="card-header"><div><span class="card-kicker">BROKER IMPORT</span><h2>Import equity tradebook</h2></div><span class="state-pill neutral">CSV</span></header>
+            <form id="portfolioImportForm" class="portfolio-import-form">
+              <label>Tradebook CSV<input id="portfolioImportFile" type="file" accept=".csv,text/csv" required></label>
+              <button class="primary-button" id="portfolioImportButton" type="submit">Validate and import</button>
+            </form>
+            <p>Supports common Zerodha and generic equity columns for date, symbol, side, quantity, price and optional fees. Imports are atomic and duplicate files are not added twice.</p>
+            <div class="portfolio-mini-list" id="portfolioImportList"><p>No broker files imported.</p></div>
+          </article>
+
+          <article class="card span-4 portfolio-reconcile-card">
+            <header class="card-header"><div><span class="card-kicker">RECONCILIATION</span><h2>Ledger integrity</h2></div><span class="state-pill neutral" id="portfolioReconcileStatus">Checking</span></header>
+            <div class="portfolio-reconcile-grid">
+              <div><span>Cash balance</span><strong id="portfolioReconcileCash">₹—</strong></div>
+              <div><span>Capital added</span><strong id="portfolioContributions">₹—</strong></div>
+              <div><span>Capital withdrawn</span><strong id="portfolioWithdrawals">₹—</strong></div>
+              <div><span>Income recorded</span><strong id="portfolioIncome">₹—</strong></div>
+            </div>
+            <div class="portfolio-reconcile-note" id="portfolioReconcileIssues">Waiting for the local ledger.</div>
+          </article>
+
+          <article class="card span-12 portfolio-performance-card">
+            <header class="card-header">
+              <div><span class="card-kicker">PERFORMANCE</span><h2>Cash-flow-neutral portfolio edge</h2></div>
+              <span class="state-pill neutral" id="portfolioPerformanceStatus">Checking</span>
+            </header>
+            <div class="portfolio-performance-grid">
+              <div><span>PORTFOLIO TWR</span><strong id="portfolioTwr">—</strong><small>External flows neutralised</small></div>
+              <div><span>ANNUALISED TWR</span><strong id="portfolioAnnualisedTwr">—</strong><small>Comparable annual rate</small></div>
+              <div><span>MONEY-WEIGHTED</span><strong id="portfolioMwr">—</strong><small>Dated investor XIRR</small></div>
+              <div><span>NIFTY 50 TWR</span><strong id="portfolioBenchmarkTwr">—</strong><small>Same external flows</small></div>
+              <div><span>EXCESS TWR</span><strong id="portfolioExcessTwr">—</strong><small>Portfolio minus benchmark</small></div>
+              <div><span>OBSERVATION WINDOW</span><strong id="portfolioPerformanceObservations">—</strong><small id="portfolioPerformanceDates">No measured period</small></div>
+            </div>
+            <div class="portfolio-performance-note" id="portfolioPerformanceNote">Waiting for reconciled transactions, cash flows and completed-session prices.</div>
+          </article>
+
+          <article class="card span-12 portfolio-risk-card">
+            <header class="card-header">
+              <div><span class="card-kicker">PORTFOLIO RISK</span><h2>Concentration, drawdown and contribution</h2></div>
+              <span class="state-pill neutral" id="portfolioRiskStatus">Checking</span>
+            </header>
+            <div class="portfolio-risk-metrics">
+              <div><span>LARGEST POSITION</span><strong id="portfolioLargestWeight">—</strong><small>Current market-value weight</small></div>
+              <div><span>TOP 3 WEIGHT</span><strong id="portfolioTopThree">—</strong><small>Combined concentration</small></div>
+              <div><span>EFFECTIVE POSITIONS</span><strong id="portfolioEffectivePositions">—</strong><small>Inverse HHI</small></div>
+              <div><span>MAX DRAWDOWN</span><strong id="portfolioMaxDrawdown">—</strong><small id="portfolioDrawdownDates">No measured path</small></div>
+            </div>
+            <div class="portfolio-risk-detail-grid">
+              <section>
+                <h3>Allocation</h3>
+                <div class="portfolio-risk-list" id="portfolioAllocationList"><p>No allocation evidence available.</p></div>
+              </section>
+              <section>
+                <h3>P&amp;L contribution</h3>
+                <div class="portfolio-risk-list" id="portfolioContributionList"><p>No contribution evidence available.</p></div>
+              </section>
+            </div>
+            <div class="portfolio-performance-note" id="portfolioRiskNote">Waiting for a performance-admissible ledger.</div>
+          </article>
+
+          <article class="card span-12 portfolio-history-card">
+            <header class="card-header">
+              <div><span class="card-kicker">TRANSACTION HISTORY</span><h2>Recent local ledger entries</h2></div>
+              <span class="micro-copy">Newest recorded first</span>
+            </header>
+            <div class="portfolio-table-wrap compact">
+              <table class="portfolio-table">
+                <thead><tr><th>Date</th><th>Stock</th><th>Side</th><th>Quantity</th><th>Price</th><th>Fees</th><th>Notes</th></tr></thead>
+                <tbody id="portfolioTransactionsBody"><tr><td colspan="7">No transactions loaded.</td></tr></tbody>
+              </table>
+            </div>
+          </article>
         </section>
       </div>
     </main>

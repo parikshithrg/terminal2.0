@@ -60,6 +60,7 @@
   let factorDialogPayload = null;
   let factorDialogSort = { key: 'return_pct', direction: 'desc' };
   let kiteConnected = false;
+  let portfolioLoaded = false;
 
   function showToast(message) {
     const toast = $('toast');
@@ -453,7 +454,8 @@
         crossStrategyPollTimer = null;
       } else if (payload.status === 'building_oos_strategy_family') {
         const current = payload.background_progress?.current_engine;
-        text('researchRankStatus', `${model.label} · ${Number(latestBacktestPayload?.evidence_ranking?.ranking_admitted || 0)} pass full-history OOS gates · building all-strategy OOS family ${Number(payload.strategy_count || 0)} / ${Number(payload.required_strategy_count || 10)}${current ? ` · ${current.replaceAll('_', ' ')}` : ''}`);
+        const progress = Number(payload.background_progress?.progress_pct || 0);
+        text('researchRankStatus', `${model.label} · ${Number(latestBacktestPayload?.evidence_ranking?.ranking_admitted || 0)} pass full-history OOS gates · building all-strategy OOS family ${progress.toFixed(0)}% · ${Number(payload.strategy_count || 0)} / ${Number(payload.required_strategy_count || 10)}${current ? ` · ${current.replaceAll('_', ' ')}` : ''}`);
         if (crossStrategyPollTimer) clearTimeout(crossStrategyPollTimer);
         crossStrategyPollTimer = setTimeout(() => { void loadCrossStrategyFdr(); }, 5000);
       } else {
@@ -1588,29 +1590,184 @@
     $('themeToggle').setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`);
   }
 
+  function portfolioMoney(value) {
+    const number = safeNumber(value);
+    return number === null ? '₹—' : `₹${number.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  function renderPortfolio(payload) {
+    const summary = payload?.summary || {};
+    const holdings = Array.isArray(payload?.holdings) ? payload.holdings : [];
+    const transactions = Array.isArray(payload?.recent_transactions) ? payload.recent_transactions : [];
+    text('portfolioAsOf', displayDate(payload?.holdings?.map((row) => row.price_as_of_date).filter(Boolean).sort().at(-1)));
+    text('portfolioMarketValue', portfolioMoney(summary.market_value_inr));
+    text('portfolioCostBasis', portfolioMoney(summary.cost_basis_inr));
+    text('portfolioUnrealised', portfolioMoney(summary.unrealised_pnl_inr));
+    text('portfolioUnrealisedPct', `Return ${signedPercent(summary.unrealised_return_pct)}`);
+    text('portfolioRealised', portfolioMoney(summary.realised_pnl_inr));
+    text('portfolioPositionCount', holdings.length.toLocaleString('en-IN'));
+    text('portfolioPriceCoverage', `${holdings.filter((row) => safeNumber(row.market_price_inr) !== null).length} of ${holdings.length} priced`);
+    text('portfolioCashBalance', portfolioMoney(summary.cash_balance_inr));
+    text('portfolioCashMeta', `${Number(summary.cash_flow_count || 0).toLocaleString('en-IN')} cash flows · ${Number(summary.transaction_count || 0).toLocaleString('en-IN')} trades`);
+    text('portfolioHoldingCount', `${holdings.length.toLocaleString('en-IN')} holding${holdings.length === 1 ? '' : 's'}`);
+    const unrealisedNode = $('portfolioUnrealised');
+    unrealisedNode.className = researchTone(summary.unrealised_pnl_inr);
+    const realisedNode = $('portfolioRealised');
+    realisedNode.className = researchTone(summary.realised_pnl_inr);
+    $('portfolioHoldingsBody').innerHTML = holdings.length ? holdings.map((row) => `<tr>
+      <td><strong>${escapeHtml(row.symbol)}</strong><small>${escapeHtml(row.display_name)}</small></td>
+      <td class="numeric">${researchNumber(row.quantity, 4)}</td>
+      <td class="numeric">${portfolioMoney(row.average_cost_inr)}</td>
+      <td class="numeric">${portfolioMoney(row.market_price_inr)}<small>${escapeHtml(displayDate(row.price_as_of_date))}</small></td>
+      <td class="numeric">${portfolioMoney(row.market_value_inr)}</td>
+      <td class="numeric ${researchTone(row.unrealised_pnl_inr)}"><strong>${portfolioMoney(row.unrealised_pnl_inr)}</strong><small>${signedPercent(row.unrealised_return_pct)}</small></td>
+      <td class="numeric">${safeNumber(row.allocation_pct) === null ? '—' : `${Number(row.allocation_pct).toFixed(2)}%`}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="portfolio-empty">No open holdings. Add a completed transaction to start the local ledger.</td></tr>';
+    $('portfolioTransactionsBody').innerHTML = transactions.length ? transactions.map((row) => `<tr>
+      <td>${escapeHtml(displayDate(row.trade_date))}</td><td><strong>${escapeHtml(row.symbol)}</strong></td>
+      <td><span class="portfolio-side ${String(row.side).toLowerCase()}">${escapeHtml(row.side)}</span></td>
+      <td class="numeric">${researchNumber(row.quantity, 4)}</td><td class="numeric">${portfolioMoney(row.price_inr)}</td>
+      <td class="numeric">${portfolioMoney(row.fees_inr)}</td><td>${escapeHtml(row.notes || '—')}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="portfolio-empty">No transactions recorded.</td></tr>';
+    const cashFlows = Array.isArray(payload?.recent_cash_flows) ? payload.recent_cash_flows : [];
+    const imports = Array.isArray(payload?.recent_imports) ? payload.recent_imports : [];
+    const reconciliation = payload?.reconciliation || {};
+    text('portfolioCashFlowCount', `${cashFlows.length.toLocaleString('en-IN')} record${cashFlows.length === 1 ? '' : 's'}`);
+    $('portfolioCashFlowList').innerHTML = cashFlows.length ? cashFlows.slice(0, 4).map((row) => `<div><span>${escapeHtml(row.flow_type.replaceAll('_', ' '))}<small>${escapeHtml(displayDate(row.flow_date))}</small></span><strong>${portfolioMoney(row.amount_inr)}</strong></div>`).join('') : '<p>No cash flows recorded.</p>';
+    $('portfolioImportList').innerHTML = imports.length ? imports.slice(0, 4).map((row) => `<div><span>${escapeHtml(row.file_name)}<small>${escapeHtml(displayDate(row.imported_at))}</small></span><strong>${Number(row.records_imported || 0).toLocaleString('en-IN')} rows</strong></div>`).join('') : '<p>No broker files imported.</p>';
+    const reconciliationLabels = { empty: 'EMPTY', reconciled: 'RECONCILED', review_required: 'REVIEW' };
+    const status = reconciliation.status || 'empty';
+    text('portfolioReconcileStatus', reconciliationLabels[status] || status.replaceAll('_', ' ').toUpperCase());
+    $('portfolioReconcileStatus').className = `state-pill ${status === 'reconciled' ? 'ready' : status === 'review_required' ? 'risk' : 'neutral'}`;
+    text('portfolioReconcileCash', portfolioMoney(reconciliation.cash_balance_inr));
+    text('portfolioContributions', portfolioMoney(reconciliation.contributions_inr));
+    text('portfolioWithdrawals', portfolioMoney(reconciliation.withdrawals_inr));
+    text('portfolioIncome', portfolioMoney(reconciliation.income_inr));
+    const issueLabels = {
+      cash_flow_history_missing: 'Record contributions and withdrawals to reconcile cash.',
+      holding_price_unavailable: 'One or more open holdings lack a stored EOD close.',
+      negative_reconciled_cash: 'Recorded cash is negative; review missing contributions or fees.',
+    };
+    const issues = Array.isArray(reconciliation.issues) ? reconciliation.issues : [];
+    text('portfolioReconcileIssues', issues.length ? issues.map((issue) => issueLabels[issue] || issue.replaceAll('_', ' ')).join(' ') : (status === 'reconciled' ? 'Trade, cash-flow and EOD price records reconcile.' : 'Add transactions and cash flows to begin reconciliation.'));
+    portfolioLoaded = true;
+  }
+
+  function renderPortfolioPerformance(payload) {
+    const ready = payload?.status === 'ready';
+    const portfolio = payload?.portfolio || {};
+    const benchmark = payload?.benchmark || {};
+    const comparison = payload?.comparison || {};
+    const percent = (value) => safeNumber(value) === null ? '—' : signedPercent(value);
+    text('portfolioTwr', percent(portfolio.time_weighted_return_pct));
+    text('portfolioAnnualisedTwr', percent(portfolio.annualised_twr_pct));
+    text('portfolioMwr', percent(portfolio.money_weighted_return_pct));
+    text('portfolioBenchmarkTwr', percent(benchmark.time_weighted_return_pct));
+    text('portfolioExcessTwr', percent(comparison.excess_twr_pct));
+    text('portfolioPerformanceObservations', ready ? Number(payload.observations || 0).toLocaleString('en-IN') : '—');
+    text('portfolioPerformanceDates', ready ? `${displayDate(payload.from_date)} to ${displayDate(payload.through_date)}` : 'No measured period');
+    const status = $('portfolioPerformanceStatus');
+    status.textContent = ready ? 'READY' : 'GATED';
+    status.className = `state-pill ${ready ? 'ready' : 'neutral'}`;
+    ['portfolioTwr', 'portfolioAnnualisedTwr', 'portfolioMwr', 'portfolioBenchmarkTwr', 'portfolioExcessTwr'].forEach((id) => {
+      const node = $(id);
+      node.className = researchTone(safeNumber(node.textContent.replace('%', '')));
+    });
+    const gateLabels = {
+      transaction_history_missing: 'Add completed transactions.',
+      external_cash_flow_history_missing: 'Record contributions and withdrawals.',
+      cash_flow_history_missing: 'Cash-flow history is required.',
+      benchmark_history_missing: 'Stored Nifty 50 history is unavailable.',
+      events_after_latest_benchmark_session: 'A ledger event is newer than the latest benchmark session.',
+      positive_initial_contribution_missing: 'A positive initial contribution is required.',
+      non_positive_prior_valuation: 'The portfolio value crossed zero; review cash-flow timing.',
+      negative_terminal_portfolio_value: 'Terminal portfolio value is negative; reconcile the ledger.',
+    };
+    const gates = Array.isArray(payload?.gates) ? payload.gates : [];
+    text('portfolioPerformanceNote', ready
+      ? 'TWR excludes contributions and withdrawals. XIRR uses dated investor flows and terminal value. Nifty 50 receives the same external flows at stored EOD closes.'
+      : (gates.map((gate) => gateLabels[gate] || gate.replaceAll('_', ' ')).join(' ') || 'Performance remains gated until the local ledger reconciles.'));
+  }
+
+  function renderPortfolioRisk(payload) {
+    const ready = payload?.status === 'ready';
+    const concentration = payload?.concentration || {};
+    const drawdown = payload?.drawdown || {};
+    const allocations = Array.isArray(payload?.allocation) ? payload.allocation : [];
+    const contributions = Array.isArray(payload?.contributions) ? payload.contributions : [];
+    text('portfolioLargestWeight', safeNumber(concentration.largest_position_pct) === null ? '—' : `${Number(concentration.largest_position_pct).toFixed(2)}%`);
+    text('portfolioTopThree', safeNumber(concentration.top_three_pct) === null ? '—' : `${Number(concentration.top_three_pct).toFixed(2)}%`);
+    text('portfolioEffectivePositions', safeNumber(concentration.effective_positions) === null ? '—' : Number(concentration.effective_positions).toFixed(2));
+    text('portfolioMaxDrawdown', safeNumber(drawdown.maximum_drawdown_pct) === null ? '—' : signedPercent(drawdown.maximum_drawdown_pct));
+    text('portfolioDrawdownDates', drawdown.peak_date && drawdown.trough_date
+      ? `${displayDate(drawdown.peak_date)} to ${displayDate(drawdown.trough_date)}`
+      : 'No measured drawdown');
+    const status = $('portfolioRiskStatus');
+    status.textContent = ready ? String(concentration.state || 'ready').toUpperCase() : 'GATED';
+    status.className = `state-pill ${ready ? (concentration.state === 'concentrated' ? 'risk' : 'ready') : 'neutral'}`;
+    $('portfolioAllocationList').innerHTML = allocations.length ? allocations.map((row) => {
+      const weight = Math.max(0, Math.min(100, Number(row.allocation_pct || 0)));
+      return `<div><span><b>${escapeHtml(row.symbol)}</b><small>${portfolioMoney(row.market_value_inr)}</small></span><strong>${weight.toFixed(2)}%</strong><i><b style="width:${weight}%"></b></i></div>`;
+    }).join('') : '<p>No allocation evidence available.</p>';
+    $('portfolioContributionList').innerHTML = contributions.length ? contributions.slice().sort((left, right) => Math.abs(Number(right.total_pnl_inr || 0)) - Math.abs(Number(left.total_pnl_inr || 0))).slice(0, 8).map((row) => {
+      const contribution = safeNumber(row.return_contribution_pct);
+      return `<div><span><b>${escapeHtml(row.symbol)}</b><small>${escapeHtml(row.display_name)}</small></span><strong class="${researchTone(row.total_pnl_inr)}">${portfolioMoney(row.total_pnl_inr)}<small>${contribution === null ? 'Contribution —' : `${signedPercent(contribution)} of net capital`}</small></strong></div>`;
+    }).join('') : '<p>No contribution evidence available.</p>';
+    const gates = Array.isArray(payload?.gates) ? payload.gates : [];
+    text('portfolioRiskNote', ready
+      ? `HHI ${Number(concentration.hhi || 0).toFixed(4)} · ${Number(concentration.position_count || 0)} positions · drawdown uses the cash-flow-neutral TWR path. Contribution is realised plus unrealised P&L over net external capital.`
+      : (gates.map((gate) => gate.replaceAll('_', ' ')).join(' · ') || 'Risk analysis remains gated until performance evidence is admissible.'));
+  }
+
+  async function loadPortfolio(force = false) {
+    if (portfolioLoaded && !force) return;
+    try {
+      const response = await fetchWithDeadline('/api/portfolio/overview', { cache: 'no-store' });
+      const payload = await response.json();
+      if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.reason || `HTTP ${response.status}`);
+      renderPortfolio(payload);
+      const performanceResponse = await fetchWithDeadline('/api/portfolio/performance', { cache: 'no-store' });
+      const performancePayload = await performanceResponse.json();
+      if (!performanceResponse.ok || performancePayload.ok === false) throw new Error(performancePayload.detail || performancePayload.reason || `HTTP ${performanceResponse.status}`);
+      renderPortfolioPerformance(performancePayload);
+      const riskResponse = await fetchWithDeadline('/api/portfolio/risk-analysis', { cache: 'no-store' });
+      const riskPayload = await riskResponse.json();
+      if (!riskResponse.ok || riskPayload.ok === false) throw new Error(riskPayload.detail || riskPayload.reason || `HTTP ${riskResponse.status}`);
+      renderPortfolioRisk(riskPayload);
+    } catch (error) {
+      $('portfolioHoldingsBody').innerHTML = `<tr><td colspan="7" class="portfolio-empty">Portfolio unavailable: ${escapeHtml(error.message)}</td></tr>`;
+      showToast(`Portfolio unavailable: ${error.message}`);
+    }
+  }
+
   function showView(view) {
     const marketState = view === 'market-state';
     const fnoPositioning = view === 'fno-positioning';
     const stockResearch = view === 'stock-research';
-    const dashboard = !marketState && !fnoPositioning && !stockResearch;
+    const portfolio = view === 'portfolio';
+    const dashboard = !marketState && !fnoPositioning && !stockResearch && !portfolio;
     $('dashboardView').hidden = !dashboard;
     $('marketStateView').hidden = !marketState;
     $('fnoPositioningView').hidden = !fnoPositioning;
     $('stockResearchView').hidden = !stockResearch;
+    $('portfolioView').hidden = !portfolio;
     $('dashboardView').classList.toggle('active', dashboard);
     $('marketStateView').classList.toggle('active', marketState);
     $('fnoPositioningView').classList.toggle('active', fnoPositioning);
     $('stockResearchView').classList.toggle('active', stockResearch);
+    $('portfolioView').classList.toggle('active', portfolio);
     $('dashboardNav').classList.toggle('active', dashboard);
     $('marketStateNav').classList.toggle('active', marketState);
     $('fnoNav').classList.toggle('active', fnoPositioning);
     $('stockResearchNav').classList.toggle('active', stockResearch);
-    document.title = stockResearch ? 'Stock Research · Workspace 2.0' : (fnoPositioning ? 'F&O Positioning · Workspace 2.0' : (marketState ? 'Market State · Workspace 2.0' : 'Workspace 2.0'));
+    $('portfolioNav').classList.toggle('active', portfolio);
+    document.title = portfolio ? 'Portfolio · Workspace 2.0' : (stockResearch ? 'Stock Research · Workspace 2.0' : (fnoPositioning ? 'F&O Positioning · Workspace 2.0' : (marketState ? 'Market State · Workspace 2.0' : 'Workspace 2.0')));
     const url = new URL(window.location.href);
     if (!dashboard) url.searchParams.set('view', view);
     else url.searchParams.delete('view');
     window.history.replaceState({}, '', url);
     window.scrollTo({ top: 0, behavior: 'instant' });
+    if (portfolio) void loadPortfolio();
   }
 
   $('themeToggle').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
@@ -1683,6 +1840,95 @@
   $('marketStateNav').addEventListener('click', () => showView('market-state'));
   $('fnoNav').addEventListener('click', () => showView('fno-positioning'));
   $('stockResearchNav').addEventListener('click', () => showView('stock-research'));
+  $('portfolioNav').addEventListener('click', () => showView('portfolio'));
+  $('portfolioTransactionForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = $('portfolioSaveButton');
+    button.disabled = true;
+    button.textContent = 'Saving…';
+    try {
+      const response = await fetch('/api/portfolio/transactions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+        body: JSON.stringify({
+          trade_date: $('portfolioTradeDate').value,
+          symbol: $('portfolioSymbol').value.trim(),
+          side: $('portfolioSide').value,
+          quantity: $('portfolioQuantity').value,
+          price_inr: $('portfolioPrice').value,
+          fees_inr: $('portfolioFees').value || 0,
+          notes: $('portfolioNotes').value.trim(),
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.ok === false) throw new Error(payload.reason || payload.detail || `HTTP ${response.status}`);
+      $('portfolioTransactionForm').reset();
+      $('portfolioTradeDate').value = new Date().toISOString().slice(0, 10);
+      $('portfolioFees').value = '0';
+      portfolioLoaded = false;
+      await loadPortfolio(true);
+      showToast(`${payload.side} ${payload.quantity} ${payload.symbol} added to the local ledger.`);
+    } catch (error) {
+      showToast(`Transaction not saved: ${String(error.message).replaceAll('_', ' ')}`);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Add to ledger';
+    }
+  });
+  $('portfolioCashFlowForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = $('portfolioCashFlowButton');
+    button.disabled = true;
+    button.textContent = 'Saving…';
+    try {
+      const response = await fetch('/api/portfolio/cash-flows', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+        body: JSON.stringify({
+          flow_date: $('portfolioCashFlowDate').value,
+          flow_type: $('portfolioCashFlowType').value,
+          amount_inr: $('portfolioCashFlowAmount').value,
+          notes: $('portfolioCashFlowNotes').value.trim(),
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.ok === false) throw new Error(payload.reason || payload.detail || `HTTP ${response.status}`);
+      $('portfolioCashFlowForm').reset();
+      $('portfolioCashFlowDate').value = new Date().toISOString().slice(0, 10);
+      portfolioLoaded = false;
+      await loadPortfolio(true);
+      showToast(`${payload.flow_type.replaceAll('_', ' ')} added to the local cash ledger.`);
+    } catch (error) {
+      showToast(`Cash flow not saved: ${String(error.message).replaceAll('_', ' ')}`);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Add cash flow';
+    }
+  });
+  $('portfolioImportForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const file = $('portfolioImportFile').files?.[0];
+    if (!file) return;
+    const button = $('portfolioImportButton');
+    button.disabled = true;
+    button.textContent = 'Validating…';
+    try {
+      if (file.size > 1500000) throw new Error('portfolio import too large');
+      const response = await fetch('/api/portfolio/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+        body: JSON.stringify({ file_name: file.name, csv_text: await file.text() }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.ok === false) throw new Error(payload.reason || payload.detail || `HTTP ${response.status}`);
+      $('portfolioImportForm').reset();
+      portfolioLoaded = false;
+      await loadPortfolio(true);
+      showToast(payload.duplicate ? 'This tradebook was already imported.' : `${payload.records_imported} tradebook rows imported.`);
+    } catch (error) {
+      showToast(`Import failed: ${String(error.message).replaceAll('_', ' ')}`);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Validate and import';
+    }
+  });
   document.querySelectorAll('[data-factor-size][data-factor-style]').forEach((button) => button.addEventListener('click', () => openFactorDialog(button.dataset.factorSize, button.dataset.factorStyle)));
   $('factorDialogClose').addEventListener('click', () => $('factorDialog').close());
   $('factorDialog').addEventListener('click', (event) => {
@@ -1745,8 +1991,10 @@
     renderResearchTable();
   }));
   setTheme(localStorage.getItem('workspace-2-theme') || 'dark');
+  $('portfolioTradeDate').value = new Date().toISOString().slice(0, 10);
+  $('portfolioCashFlowDate').value = new Date().toISOString().slice(0, 10);
   const requestedView = new URLSearchParams(window.location.search).get('view');
-  showView(['market-state', 'fno-positioning', 'stock-research'].includes(requestedView) ? requestedView : 'dashboard');
+  showView(['market-state', 'fno-positioning', 'stock-research', 'portfolio'].includes(requestedView) ? requestedView : 'dashboard');
   loadKiteStatus();
   loadDashboard(false);
 })();

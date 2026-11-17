@@ -357,11 +357,85 @@ stock belongs in that cell. No order placement is in scope.
       of prior moves. Composite weights and UI rankings remain deferred until each
       added layer demonstrates incremental out-of-sample value against the simpler
       frozen model.
-   10. **Engine modularisation and performance.** Split data quality, execution,
-       metrics, statistics, ranking, regimes and strategy families into focused
-       modules. Add versioned result caches, incremental EOD recalculation,
-       background progress, SQLite WAL/index tuning, frozen integration fixtures
-       and regression tests for published results.
+   10. **Engine modularisation and performance — complete.** Preserve every
+       published contract while reducing the monolithic engine and shortening
+       refresh/research work. Complete these increments in order:
+       1. **Statistics module — complete.** Extracted the two-sided trade-edge
+          test, deterministic IID/moving-block bootstrap and Benjamini–Hochberg
+          FDR into `workspace_analytics.statistics`. Compatibility aliases keep
+          existing API results and callers unchanged. Direct frozen-contract
+          tests supplement the full regression suite;
+       2. **Data-quality, execution-cost and performance-metric modules —
+          complete.** Moved the full point-in-time backtest series gate and audit
+          to `workspace_analytics.data_quality`, the frozen Zerodha/NSE delivery
+          schedule and calculator to `workspace_analytics.execution`, and
+          peak-to-trough drawdown to `workspace_analytics.metrics`. Thin engine
+          compatibility wrappers preserve existing imports, API payloads and
+          gate decisions;
+       3. **Extract ranking, regime and strategy-family components — complete.**
+          The ranking slice is complete: comparison diagnostics, full-history OOS
+          admission and combined cross-strategy FDR now live in
+          `workspace_analytics.ranking`. Compatibility wrappers preserve private
+          engine imports used by existing tests and callers. The frozen market-
+          market-regime, sector-trend and stock-leadership/priming classifiers
+          plus the market sample-summary
+          contract now live in
+          `workspace_analytics.regimes`, with the published engine surface bound
+          directly to the component and direct contract tests covering readiness,
+          coverage gating, relative ranks, setup states and deliberately unjoined
+          trade counts. The five frozen trend signal rules now live in
+          `workspace_analytics.trend_strategies` and the five frozen mean-
+          reversion rules in `workspace_analytics.mean_reversion_strategies`.
+          Engine adapters inject the unchanged next-session execution, cost and
+          portfolio-metric machinery; direct parity tests cover all ten models;
+       4. **Versioned result caches and incremental EOD invalidation — complete.**
+          Added a reusable persistent SQLite result-cache contract whose source
+          versions hash declared tables' latest session, retrieval timestamp and
+          row count rather than whole database-file metadata. Cache writes and
+          unrelated tables therefore do not invalidate results. The dashboard
+          overview is the first integrated contract: a new EOD/source revision
+          replaces only its stale version while other cached contracts remain.
+          The repeatedly requested local screener, factor-research foundation and
+          stock-YTD research table now use the same persistent source-versioned
+          boundary and rebuild once per relevant candles/instruments/snapshot
+          revision. Build and parameterised endpoints remain uncached. Full-
+          history OOS evidence is now restart-safe in the same persistent cache,
+          keyed by candles, instruments, corporate-action audit, point-in-time
+          membership/classification and size-snapshot revisions. Cross-strategy
+          FDR hydrates frozen default families after restart; custom parameter
+          runs can no longer overwrite a default family. Whole-file metadata and
+          the redundant process-memory result cache have been removed;
+       5. **Observable background-job progress — complete.** Added the reusable
+          persistent `background-research-job-v1` registry with job type, semantic
+          source version, completed/total units, percentage, current stage,
+          timestamps, structured errors, detail and terminal state. The explicit
+          all-strategy OOS build now writes this contract as each engine finishes,
+          preserves terminal records across restarts and marks an abandoned
+          running record interrupted rather than leaving a false active state.
+          `/api/research/jobs` exposes recent jobs, while the Stock Research
+          polling status shows the live percentage and engine name;
+       6. **SQLite concurrency and query tuning — complete.** Centralised all
+          application-owned engine, cache, job-registry and official-snapshot
+          connections in `workspace_analytics.sqlite_store`. Both Workspace
+          stores now run in WAL mode with a 30-second busy timeout, NORMAL
+          synchronous durability, foreign-key enforcement and explicit
+          query-only read connections. Added targeted indexes for repeated
+          stock-kind scans and point-in-time classification, membership and
+          symbol-lineage lookups; existing candle date/instrument indexes were
+          retained because query-plan inspection confirmed they already cover
+          the dominant price-history paths. A concurrency regression proves a
+          dashboard reader can continue from the last committed snapshot during
+          an uncommitted refresh write; and
+       7. **Representative integration fixtures and published-result
+          regressions — complete.** Added the synthetic, versioned
+          `published-analytics-regression-fixture-v1` covering the public equity-
+          delivery cost result, SMA signal state, market-regime classification,
+          combined cross-strategy FDR and persistent background-job state. The
+          fixture deliberately freezes semantic results rather than live market
+          values, dates or universe membership. Its update policy requires an
+          intentional production contract-version bump before expected outputs
+          change. Five end-to-end regression cases now protect these UI-consumed
+          boundaries, bringing the complete suite to 124 passing tests.
 
    The existing EOD-only design, independent Workspace-owned SQLite stores,
    completed-session evidence, official-source provenance, explicit missing-data
@@ -369,10 +443,52 @@ stock belongs in that cell. No order placement is in scope.
    placement and separation of long-term portfolio analysis from trading research
    remain unchanged throughout this workstream.
 
-6. **Portfolio.** Build long-term capital analysis independently from trading
-   research.
+6. **Portfolio — complete.** Build long-term capital analysis independently from
+   trading research, preserving the current descriptive EOD and no-ordering
+   boundaries. Complete these increments in order:
+   1. **Local transaction ledger and completed-session valuation — complete.**
+      Added the `portfolio-overview-v1` and `portfolio-transaction-v1` contracts,
+      a local-only buy/sell ledger, moving weighted-average cost basis including
+      recorded fees, oversell prevention, latest stored EOD valuation, allocation
+      weights and realised/unrealised P&L. The new Portfolio page exposes summary
+      metrics, holdings, recent transactions and a validated transaction form.
+      It is explicitly isolated from backtest signals and cannot place orders;
+   2. **Broker import, cash flows and reconciliation — complete.** Added atomic,
+      SHA-256-idempotent CSV tradebook ingestion for common Zerodha/generic
+      equity columns. An invalid row, unknown Workspace symbol or chronological
+      oversell rolls back the whole import; duplicate files are disclosed rather
+      than inserted again. Added explicit contribution, withdrawal, dividend,
+      interest, tax and fee records, plus reconciled cash, trade/cash counts,
+      import history, EOD price coverage and actionable integrity issues. The
+      Portfolio page now contains cash-flow entry, local CSV import and ledger-
+      reconciliation panels;
+   3. **Cash-flow-neutral performance and benchmark comparison — complete.**
+      Added the `portfolio-performance-v1` contract with daily chain-linked
+      time-weighted return, annualised TWR and dated money-weighted return/XIRR.
+      Contributions and withdrawals are neutralised for TWR; dividends and
+      interest remain investment return, while taxes, fees and trade costs reduce
+      it. Nifty 50 comparison applies the same external cash flows at stored EOD
+      closes and publishes excess TWR. Missing cash history, benchmark sessions,
+      stock prices or invalid valuation states gate the result instead of
+      inferring performance. The Portfolio page now exposes the performance
+      window, portfolio and benchmark returns, and gate reasons;
+   4. **Allocation, concentration, drawdown and contribution — complete.**
+      Added the `portfolio-risk-analysis-v1` contract with latest-EOD allocation,
+      largest/top-three/top-five position concentration, HHI/effective positions,
+      cash-flow-neutral maximum drawdown and per-symbol realised-plus-unrealised
+      P&L contribution. Dividends, interest, taxes and cash fees remain a separate
+      cash contribution until cash-flow records support reliable symbol tagging.
+      Performance gates carry through unchanged, so incomplete ledgers publish
+      no inferred risk numbers. The Portfolio page exposes compact risk metrics,
+      allocation bars, contribution leaders and methodology boundaries; and
+   5. **Integration fixtures and Portfolio release audit — complete.** Added the
+      versioned `portfolio-release-regression-fixture-v1` covering a reconciled
+      two-stock ledger across overview, performance and risk contracts, including
+      an interim drawdown, external contribution, income, fee and benchmark path.
+      Release regressions freeze contract semantics, empty-state gates, local-only
+      and no-ordering boundaries, required DOM IDs/endpoints, unique IDs and
+      responsive rules. Desktop, tablet and mobile layouts were browser-audited;
+      operational setup and backup guidance now lives in the README.
 7. **Historical regimes.** Present policy cycles, analogues and regime evidence.
 8. **Cross-page consolidation and release audit.** Validate responsive behavior,
    accessibility, data-state honesty, performance and operational instructions.
-9. **Expense analyser — final milestone.** Build only after the core terminal is
-   stable, retaining local-only storage and reconciliation.
