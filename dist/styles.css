@@ -449,14 +449,32 @@ html[data-theme="light"] .lead-copy { color: #4f6072; }
 .research-backtest-evidence.negative strong { color: var(--red); }
 .research-backtest-evidence.unavailable strong { color: var(--muted); }
 .research-table-footer { display: flex; justify-content: space-between; gap: 15px; padding-top: 10px; color: var(--muted); font-size: 11px; }
-.portfolio-summary-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); box-shadow: var(--shadow); }
+.portfolio-summary-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); box-shadow: var(--shadow); }
 .portfolio-summary-strip article { min-width: 0; min-height: 98px; padding: 13px 14px; border-right: 1px solid var(--line); }
 .portfolio-summary-strip article:last-child { border-right: 0; }
 .portfolio-summary-strip span { display: block; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; }
 .portfolio-summary-strip strong { display: block; margin-top: 9px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 18px; }
 .portfolio-summary-strip small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
 .portfolio-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-.portfolio-entry-card { align-self: start; }
+.portfolio-entry-card, .portfolio-holdings-card { align-self: start; min-width: 0; }
+.portfolio-entry-card { grid-column: span 8; order: 0; }
+.portfolio-import-card { grid-column: span 4; order: 1; align-self: start; }
+.portfolio-holdings-card { order: 2; }
+.portfolio-analyser-card { order: 3; }
+.portfolio-history-card { order: 4; }
+.portfolio-cash-card, .portfolio-reconcile-card, .portfolio-performance-card, .portfolio-risk-card { display: none !important; }
+@media (max-width: 1100px) { .portfolio-entry-card, .portfolio-import-card { grid-column: 1 / -1; } }
+.portfolio-entry-card .portfolio-form { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.portfolio-holdings-card .portfolio-table { min-width: 900px; table-layout: auto; }
+.portfolio-holdings-card .portfolio-table th:first-child { width: 24%; }
+.portfolio-holdings-card .portfolio-table td { padding: 9px 12px; }
+.portfolio-holdings-card .portfolio-table td.numeric { white-space: nowrap; }
+@media (max-width: 1100px) {
+  .portfolio-entry-card .portfolio-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .portfolio-entry-card .portfolio-form { grid-template-columns: 1fr; }
+}
 .portfolio-form { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
 .portfolio-form label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
 .portfolio-form input, .portfolio-form select { width: 100%; height: 35px; min-width: 0; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 4px; color: var(--text); background: var(--surface-2); font: inherit; letter-spacing: normal; text-transform: none; }
@@ -814,3 +832,5 @@ html[data-theme="light"] .lead-copy { color: #4f6072; }
   .research-backtest-grid { grid-template-columns: 1fr; }
   .research-summary-strip article:nth-child(n) { border-right: 0; border-bottom: 1px solid var(--line); }
 }
+/* Asset-specific form fields must stay hidden despite label layout rules. */
+.portfolio-form label[hidden] { display: none !important; }

@@ -481,19 +481,22 @@
 
         <section class="portfolio-summary-strip" aria-label="Portfolio summary">
           <article><span>MARKET VALUE</span><strong id="portfolioMarketValue">₹—</strong><small>Latest completed-session closes</small></article>
-          <article><span>COST BASIS</span><strong id="portfolioCostBasis">₹—</strong><small>Moving weighted average</small></article>
+          <article><span>BUY VALUE</span><strong id="portfolioCostBasis">₹—</strong><small>Cost of current holdings</small></article>
           <article><span>UNREALISED P&amp;L</span><strong id="portfolioUnrealised">₹—</strong><small id="portfolioUnrealisedPct">Return —</small></article>
           <article><span>REALISED P&amp;L</span><strong id="portfolioRealised">₹—</strong><small>Recorded disposals</small></article>
           <article><span>POSITIONS</span><strong id="portfolioPositionCount">—</strong><small id="portfolioPriceCoverage">— priced</small></article>
-          <article><span>CASH BALANCE</span><strong id="portfolioCashBalance">₹—</strong><small id="portfolioCashMeta">Reconciliation pending</small></article>
         </section>
 
         <section class="portfolio-grid">
-          <article class="card span-4 portfolio-entry-card">
+          <article class="card span-12 portfolio-entry-card">
             <header class="card-header"><div><span class="card-kicker">LOCAL LEDGER</span><h2>Add transaction</h2></div><span class="state-pill neutral">LOCAL ONLY</span></header>
             <form id="portfolioTransactionForm" class="portfolio-form">
+              <label>Asset type<select id="portfolioAssetType"><option value="equity">Equity</option><option value="mutual_fund">Mutual fund</option></select></label>
+              <label>Fund name<input id="portfolioFundName" list="portfolioFundOptions" placeholder="Search mutual fund / plan" autocomplete="off"><datalist id="portfolioFundOptions"></datalist></label>
+              <label>Latest NAV (₹)<input id="portfolioFundNav" type="number" min="0.000001" step="any" placeholder="Mutual funds only"></label>
+              <label>NAV date<input id="portfolioNavDate" type="date"></label>
               <label>Trade date<input id="portfolioTradeDate" name="tradeDate" type="date" required></label>
-              <label>Symbol<input id="portfolioSymbol" name="symbol" type="text" maxlength="40" placeholder="RELIANCE" autocomplete="off" required></label>
+              <label>Symbol<input id="portfolioSymbol" name="symbol" type="text" maxlength="40" placeholder="Search NSE stocks / ETFs" list="portfolioSymbolOptions" autocomplete="off" required><datalist id="portfolioSymbolOptions"></datalist></label>
               <label>Side<select id="portfolioSide" name="side"><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label>
               <label>Quantity<input id="portfolioQuantity" name="quantity" type="number" min="0.000001" step="0.000001" required></label>
               <label>Price (₹)<input id="portfolioPrice" name="price" type="number" min="0.01" step="0.01" required></label>
@@ -502,16 +505,17 @@
               <button class="primary-button" id="portfolioSaveButton" type="submit">Add to ledger</button>
             </form>
             <p class="portfolio-boundary">The ledger records completed transactions and values holdings from stored EOD closes. It does not place orders or consume trading signals.</p>
+            <p class="portfolio-boundary">Mutual fund units and transactions require manual entry. Holdings use a newer AMFI NAV when available through Refresh data; otherwise the manually entered NAV and date are retained.</p>
           </article>
 
-          <article class="card span-8 portfolio-holdings-card">
+          <article class="card span-12 portfolio-holdings-card">
             <header class="card-header">
               <div><span class="card-kicker">CURRENT HOLDINGS</span><h2>Allocation and valuation</h2></div>
               <span class="micro-copy" id="portfolioHoldingCount">— holdings</span>
             </header>
             <div class="portfolio-table-wrap">
               <table class="portfolio-table">
-                <thead><tr><th>Stock</th><th>Quantity</th><th>Average cost</th><th>Close</th><th>Market value</th><th>Unrealised</th><th>Weight</th></tr></thead>
+                <thead><tr><th>Stock / fund</th><th>Quantity / units</th><th>Average cost</th><th>Close / NAV</th><th>Market value</th><th>Unrealised</th><th>Weight</th><th>Actions</th></tr></thead>
                 <tbody id="portfolioHoldingsBody"><tr><td colspan="7">Loading local portfolio.</td></tr></tbody>
               </table>
             </div>
@@ -533,7 +537,9 @@
           <article class="card span-4 portfolio-import-card">
             <header class="card-header"><div><span class="card-kicker">BROKER IMPORT</span><h2>Import equity tradebook</h2></div><span class="state-pill neutral">CSV</span></header>
             <form id="portfolioImportForm" class="portfolio-import-form">
-              <label>Tradebook CSV<input id="portfolioImportFile" type="file" accept=".csv,text/csv" required></label>
+              <label>Tradebook CSV or Zerodha holdings XLSX<input id="portfolioImportFile" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+              <label>Holdings snapshot date (XLSX)<input id="portfolioSnapshotDate" type="date"></label>
+              <p class="supplement-note">XLSX holdings import quantity and average cost as opening balances on the selected date. This does not recreate past trades or returns. Existing symbols must be deleted before importing their snapshot.</p>
               <button class="primary-button" id="portfolioImportButton" type="submit">Validate and import</button>
             </form>
             <p>Supports common Zerodha and generic equity columns for date, symbol, side, quantity, price and optional fees. Imports are atomic and duplicate files are not added twice.</p>
@@ -551,7 +557,18 @@
             <div class="portfolio-reconcile-note" id="portfolioReconcileIssues">Waiting for the local ledger.</div>
           </article>
 
-          <article class="card span-12 portfolio-performance-card">
+          <article class="card span-12 portfolio-analyser-card">
+            <header class="card-header"><div><span class="card-kicker">PORTFOLIO ANALYSER</span><h2>Allocation, concentration and fund exposure</h2></div><span id="portfolioAnalyserDates" class="micro-copy"></span></header>
+            <div id="portfolioAnalyserMetrics" class="portfolio-risk-metrics"></div>
+            <div class="portfolio-risk-detail-grid"><section><h3>Portfolio diversification</h3><p class="supplement-note">Underlying disclosed weights are applied to current fund values. Missing disclosures and residual weights remain unresolved. Gold and silver ETFs are classified as commodity wrappers.</p><div id="portfolioAnalyserAllocation" class="portfolio-risk-list"></div></section><section><h3>Largest exposures</h3><div id="portfolioAnalyserExposures" class="portfolio-risk-list"></div></section></div>
+            <div class="portfolio-risk-detail-grid"><section><h3>Unrealised P&amp;L by holding</h3><div id="portfolioAnalyserPnl" class="portfolio-risk-list"></div></section><section><h3>Mutual fund look-through &amp; stock overlap</h3><p class="supplement-note">Underlying stocks and sector overlap require dated AMC portfolio disclosures. Fund names and NAVs alone do not contain this information.</p><div id="portfolioAnalyserGaps" class="portfolio-risk-list"></div></section></div>
+            <p id="portfolioAnalyserNote" class="supplement-note"></p>
+            <header class="card-header"><div><span class="card-kicker">AMC &amp; FUND ANALYSER</span><h2>Mutual funds held in this portfolio</h2></div><span id="portfolioFundCoverage" class="micro-copy"></span></header>
+            <div class="portfolio-risk-detail-grid"><section><h3>AMC allocation</h3><div id="portfolioAmcAllocation" class="portfolio-risk-list"></div></section><section><h3>AMFI scheme categories</h3><div id="portfolioFundCategories" class="portfolio-risk-list"></div></section></div>
+            <div class="portfolio-table-wrap"><table class="portfolio-table"><thead><tr><th>Fund / AMC</th><th>Portfolio weight</th><th>Latest AMFI NAV</th><th>NAV date</th><th>Data loaded</th></tr></thead><tbody id="portfolioFundAnalysisRows"></tbody></table></div>
+            <p class="supplement-note">Refresh data loads AMFI metadata and reported NAVs for held funds. Holdings valuation uses the newer of the manual and sourced NAV dates. Units and purchase costs remain manual. Stock overlap requires AMC holdings disclosures.</p>
+          </article>
+          <article class="card span-12 portfolio-performance-card" hidden>
             <header class="card-header">
               <div><span class="card-kicker">PERFORMANCE</span><h2>Cash-flow-neutral portfolio edge</h2></div>
               <span class="state-pill neutral" id="portfolioPerformanceStatus">Checking</span>

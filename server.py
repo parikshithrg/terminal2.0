@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import mimetypes
 import sqlite3
@@ -170,6 +172,70 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/portfolio/overview":
             self._local_contract(lambda: portfolio_overview(self.market_db))
+            return
+        if path == '/api/portfolio/analyser':
+            from workspace_analytics.portfolio_analyser import portfolio_analyser
+            self._local_contract(lambda: portfolio_analyser(self.market_db))
+            return
+        if path == '/api/portfolio/funds/refresh':
+            from workspace_analytics.portfolio_analyser import refresh_held_funds
+            from workspace_analytics.fund_disclosures import refresh_disclosures, load_verified_user_disclosures
+            def refresh_funds():
+                result = refresh_held_funds(self.market_db)
+                result['user_disclosures'] = load_verified_user_disclosures(self.market_db)
+                try:
+                    result['disclosures'] = refresh_disclosures(self.market_db)
+                except (ValueError, requests.RequestException) as error:
+                    result['disclosure_error'] = str(error)
+                return result
+            self._local_contract(refresh_funds)
+            return
+        if path == '/api/portfolio/prices/refresh':
+            from workspace_analytics.portfolio import refresh_portfolio_prices
+            self._local_contract(lambda: refresh_portfolio_prices(self.market_db))
+            return
+        if path == '/api/portfolio/fund-schemes':
+            from workspace_analytics.sqlite_store import connect_database
+            connection = connect_database(self.market_db)
+            try:
+                connection.execute('CREATE TABLE IF NOT EXISTS portfolio_fund_catalog (scheme_code TEXT PRIMARY KEY, name TEXT NOT NULL, isin TEXT NOT NULL)')
+                if not connection.execute('SELECT 1 FROM portfolio_fund_catalog LIMIT 1').fetchone():
+                    response = requests.get('https://portal.amfiindia.com/spages/NAVAll.txt', timeout=30)
+                    response.raise_for_status()
+                    schemes = []
+                    for row in csv.reader(io.StringIO(response.text), delimiter=';'):
+                        if len(row) >= 6 and row[0].strip().isdigit():
+                            isin = next((value.strip() for value in row[1:3] if value.strip().startswith('INF')), '')
+                            schemes.append((row[0].strip(), ' · '.join(v.strip() for v in row[3:-2]), isin))
+                    if not schemes:
+                        raise ValueError('amfi_scheme_list_empty')
+                    connection.executemany('INSERT OR REPLACE INTO portfolio_fund_catalog VALUES (?,?,?)', schemes)
+                    connection.commit()
+                rows = connection.execute('SELECT scheme_code,name,isin FROM portfolio_fund_catalog ORDER BY name').fetchall()
+                self._json(200, {'ok': True, 'schemes': [dict(row) for row in rows]})
+            except (requests.RequestException, sqlite3.Error, ValueError):
+                self._json(503, {'ok': False, 'reason': 'fund_scheme_catalog_unavailable'})
+            finally:
+                connection.close()
+            return
+        if path == "/api/portfolio/symbols":
+            from workspace_analytics.portfolio import ensure_portfolio_schema
+            from workspace_analytics.sqlite_store import connect_database
+            connection = connect_database(self.market_db)
+            try:
+                ensure_portfolio_schema(connection)
+                if not connection.execute('SELECT 1 FROM portfolio_symbol_catalog LIMIT 1').fetchone():
+                    response = requests.get('https://api.kite.trade/instruments/NSE', timeout=30)
+                    response.raise_for_status()
+                    rows = [(row['tradingsymbol'], row.get('name') or row['tradingsymbol']) for row in csv.DictReader(io.StringIO(response.text)) if row.get('segment') == 'NSE' and row.get('instrument_type') == 'EQ']
+                    connection.executemany('INSERT OR REPLACE INTO portfolio_symbol_catalog VALUES (?,?)', rows)
+                    connection.commit()
+                rows = connection.execute("SELECT symbol,name FROM portfolio_symbol_catalog UNION SELECT SUBSTR(instrument_id,7),display_name FROM instruments WHERE kind='stock' ORDER BY 1").fetchall()
+                self._json(200, {'ok': True, 'symbols': [dict(row) for row in rows]})
+            except (requests.RequestException, sqlite3.Error) as error:
+                self._json(503, {'ok': False, 'reason': 'symbol_catalog_unavailable'})
+            finally:
+                connection.close()
             return
         if path == "/api/portfolio/performance":
             self._local_contract(lambda: portfolio_performance(self.market_db))

@@ -50,6 +50,18 @@ class PortfolioFoundationTests(unittest.TestCase):
             "fees_inr": fees,
         })
 
+    def test_delete_holding_removes_transactions_without_adding_trade(self) -> None:
+        self.add("BUY", 10, 100)
+        self.add("BUY", 2, 110)
+        result = record_portfolio_transaction(self.database, {
+            "action": "delete_holding", "symbol": "AAA", "side": "BUY",
+            "quantity": 1, "price_inr": 1, "trade_date": date.today().isoformat(),
+        })
+        self.assertTrue(result["ok"])
+        overview = portfolio_overview(self.database)
+        self.assertEqual(overview["holdings"], [])
+        self.assertEqual(overview["summary"]["transaction_count"], 0)
+
     def test_weighted_cost_valuation_and_realised_pnl(self) -> None:
         self.add("BUY", 10, 100, 10)
         self.add("BUY", 10, 110, 10)

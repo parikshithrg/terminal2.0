@@ -1526,7 +1526,7 @@
     const kiteStages = sourceEod && kiteConnected ? 4 : 0;
     const corporateStages = showMessage ? 1 : 0;
     const snapshotStages = showMessage ? 2 : 0;
-    const totalStages = 9 + kiteStages + corporateStages + snapshotStages;
+    const totalStages = 9 + kiteStages + corporateStages + snapshotStages + (showMessage ? 2 : 0);
     let completedStages = 0;
     const markComplete = () => {
       completedStages += 1;
@@ -1544,6 +1544,16 @@
       setSourceState('', 'Reading refreshed EOD');
     }
     if (showMessage) {
+      setSourceState('', 'Refreshing portfolio prices and held fund data');
+      for (const endpoint of ['/api/portfolio/prices/refresh', '/api/portfolio/funds/refresh']) {
+        try {
+          const response = await fetchWithDeadline(endpoint, {cache: 'no-store'}, 60000);
+          const result = await response.json();
+          if (!response.ok || !result.ok) throw new Error(result.reason || 'source unavailable');
+          if (result.missing?.length) showToast(`${result.missing.length} held funds were not matched to AMFI.`);
+        } catch (error) { showToast(`Portfolio data refresh incomplete: ${error.message}`); }
+        finally { markComplete(); }
+      }
       setSourceState('', 'Refreshing official EOD snapshots');
       try {
         await sourceOfficialSnapshots(markComplete);
@@ -1626,8 +1636,6 @@
     text('portfolioRealised', portfolioMoney(summary.realised_pnl_inr));
     text('portfolioPositionCount', holdings.length.toLocaleString('en-IN'));
     text('portfolioPriceCoverage', `${holdings.filter((row) => safeNumber(row.market_price_inr) !== null).length} of ${holdings.length} priced`);
-    text('portfolioCashBalance', portfolioMoney(summary.cash_balance_inr));
-    text('portfolioCashMeta', `${Number(summary.cash_flow_count || 0).toLocaleString('en-IN')} cash flows · ${Number(summary.transaction_count || 0).toLocaleString('en-IN')} trades`);
     text('portfolioHoldingCount', `${holdings.length.toLocaleString('en-IN')} holding${holdings.length === 1 ? '' : 's'}`);
     const unrealisedNode = $('portfolioUnrealised');
     unrealisedNode.className = researchTone(summary.unrealised_pnl_inr);
@@ -1641,7 +1649,36 @@
       <td class="numeric">${portfolioMoney(row.market_value_inr)}</td>
       <td class="numeric ${researchTone(row.unrealised_pnl_inr)}"><strong>${portfolioMoney(row.unrealised_pnl_inr)}</strong><small>${signedPercent(row.unrealised_return_pct)}</small></td>
       <td class="numeric">${safeNumber(row.allocation_pct) === null ? '—' : `${Number(row.allocation_pct).toFixed(2)}%`}</td>
+      <td><button type="button" data-holding-delete="${escapeHtml(row.symbol)}">Delete</button></td>
     </tr>`).join('') : '<tr><td colspan="7" class="portfolio-empty">No open holdings. Add a completed transaction to start the local ledger.</td></tr>';
+    $('portfolioHoldingsBody').onclick = async (event) => {
+      const target = event.target.closest('[data-holding-edit], [data-holding-delete]');
+      if (!target) return;
+      const symbol = target.dataset.holdingEdit || target.dataset.holdingDelete;
+      const row = holdings.find((item) => item.symbol === symbol);
+      if (target.dataset.holdingEdit) {
+        if (!confirm('Editing replaces all transactions for this holding with a corrected opening balance. Continue?')) return;
+        $('portfolioAssetType').value = row.asset_type || 'equity';
+        $('portfolioFundName').value = row.display_name;
+        $('portfolioFundNav').value = row.market_price_inr || '';
+        $('portfolioNavDate').value = row.price_as_of_date || '';
+        $('portfolioSymbol').value = symbol;
+        $('portfolioQuantity').value = row.quantity;
+        $('portfolioPrice').value = row.average_cost_inr;
+        $('portfolioSide').value = 'BUY';
+        $('portfolioTransactionForm').dataset.editSymbol = symbol;
+        $('portfolioSaveButton').textContent = 'Save holding correction';
+        $('portfolioSymbol').focus();
+        return;
+      }
+      if (!confirm(`Delete ${symbol} and all its local transactions? This removes its realised history too.`)) return;
+      try {
+        const response = await fetch('/api/portfolio/transactions', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'delete_holding',symbol,side:'BUY',quantity:1,price_inr:1,trade_date:new Date().toISOString().slice(0,10)})});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.reason);
+        await loadPortfolio(true);
+      } catch (error) { showToast(`Holding not deleted: ${error.message}`); }
+    };
     $('portfolioTransactionsBody').innerHTML = transactions.length ? transactions.map((row) => `<tr>
       <td>${escapeHtml(displayDate(row.trade_date))}</td><td><strong>${escapeHtml(row.symbol)}</strong></td>
       <td><span class="portfolio-side ${String(row.side).toLowerCase()}">${escapeHtml(row.side)}</span></td>
@@ -1745,6 +1782,26 @@
       const payload = await response.json();
       if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.reason || `HTTP ${response.status}`);
       renderPortfolio(payload);
+      const analysisResponse = await fetchWithDeadline('/api/portfolio/analyser', {cache: 'no-store'});
+      const analysis = await analysisResponse.json();
+      if (!analysisResponse.ok) throw new Error('Portfolio analyser unavailable');
+      const metric = (label, value) => `<div><span>${label}</span><strong>${value}</strong></div>`;
+      $('portfolioAnalyserMetrics').innerHTML = metric('LARGEST POSITION', analysis.largest_weight_pct == null ? '—' : `${analysis.largest_weight_pct.toFixed(2)}%`) + metric('TOP 3 WEIGHT', analysis.top_three_pct == null ? '—' : `${analysis.top_three_pct.toFixed(2)}%`) + metric('EFFECTIVE POSITIONS', analysis.effective_positions == null ? '—' : analysis.effective_positions.toFixed(2)) + metric('UNPRICED HOLDINGS', analysis.unpriced_count);
+      const bar = (label, amount, weight) => `<div><span><b>${escapeHtml(label)}</b><small>${portfolioMoney(amount)}</small></span><strong>${Number(weight || 0).toFixed(2)}%</strong><i><b style="width:${Math.max(0, Math.min(100, Number(weight || 0)))}%"></b></i></div>`;
+      $('portfolioAnalyserAllocation').innerHTML = analysis.lookthrough.allocation.map(r => bar(r.category, r.value_inr, r.weight_pct)).join('') || '<p>No priced holdings.</p>';
+      $('portfolioAnalyserExposures').innerHTML = analysis.holdings.slice(0, 8).map(r => bar(r.display_name, r.market_value_inr, r.weight_pct)).join('') || '<p>No holdings.</p>';
+      $('portfolioAnalyserPnl').innerHTML = analysis.holdings.slice().sort((a,b) => Math.abs(b.unrealised_pnl_inr || 0)-Math.abs(a.unrealised_pnl_inr || 0)).map(r => `<div><span>${escapeHtml(r.display_name)}</span><strong class="${researchTone(r.unrealised_pnl_inr)}">${portfolioMoney(r.unrealised_pnl_inr)}</strong></div>`).join('') || '<p>No holdings.</p>';
+      const lookthrough = analysis.lookthrough;
+      $('portfolioAnalyserGaps').innerHTML = lookthrough.coverage.map(r => `<div><span><b>${escapeHtml(r.name)}</b><small>${r.date ? `${escapeHtml(displayDate(r.date))} · ${r.coverage_pct.toFixed(2)}% allocation loaded` : 'Disclosure unavailable · exposure unresolved'}</small>${r.source?.startsWith('https://') ? `<a href="${escapeHtml(r.source)}" target="_blank" rel="noopener">AMC source</a>` : `<small>${escapeHtml(r.source || '')}</small>`}</span></div>`).join('') + (lookthrough.pairs.length ? lookthrough.pairs.map(r => `<div><span>${escapeHtml(r.left)} / ${escapeHtml(r.right)}<small>${r.common_stocks} common stocks</small></span><strong>${r.overlap_pct.toFixed(2)}% overlap</strong></div>`).join('') : '<p>Fund-to-fund overlap requires at least two loaded equity portfolios.</p>') + '<h3>Disclosed underlying stock exposure</h3>' + lookthrough.stocks.slice(0, 15).map(r => `<div><span>${escapeHtml(r.name)}<small>Held through ${r.fund_count} fund(s)</small></span><strong>${portfolioMoney(r.value_inr)}</strong></div>`).join('');
+      text('portfolioAnalyserDates', `Valuations: ${analysis.price_dates.map(displayDate).join(' – ') || 'Unavailable'}`);
+      text('portfolioAnalyserNote', analysis.method);
+      const fa = analysis.fund_analysis;
+      text('portfolioFundCoverage', `${fa.matched_count} of ${fa.fund_count} held funds matched`);
+      const allocationRows = rows => rows.map(r => bar(`${r.name} · ${r.fund_weight_pct.toFixed(2)}% of funds`, r.value_inr, r.portfolio_weight_pct)).join('') || '<p>No mutual funds held.</p>';
+      $('portfolioAmcAllocation').innerHTML = allocationRows(fa.amcs);
+      $('portfolioFundCategories').innerHTML = allocationRows(fa.categories);
+      $('portfolioFundAnalysisRows').innerHTML = fa.funds.map(r => `<tr><td><strong>${escapeHtml(r.metadata.name || r.display_name)}</strong><small>${escapeHtml(r.metadata.amc || 'Unmatched AMC')}</small></td><td class="numeric">${r.weight_pct.toFixed(2)}%</td><td class="numeric">${portfolioMoney(r.metadata.nav)}</td><td>${escapeHtml(displayDate(r.metadata.nav_date))}</td><td>${escapeHtml(displayDate(r.metadata.retrieved_at))}</td></tr>`).join('') || '<tr><td colspan="5">No mutual funds held.</td></tr>';
+      return;
       const performanceResponse = await fetchWithDeadline('/api/portfolio/performance', { cache: 'no-store' });
       const performancePayload = await performanceResponse.json();
       if (!performanceResponse.ok || performancePayload.ok === false) throw new Error(performancePayload.detail || performancePayload.reason || `HTTP ${performanceResponse.status}`);
@@ -1956,6 +2013,8 @@
   $('themeToggle').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
   $('refreshButton').addEventListener('click', async () => {
     await loadDashboard(true, kiteConnected);
+    portfolioLoaded = false;
+    if (!$('portfolioView').hidden) await loadPortfolio(true);
     await loadWorkspaceReleaseAudit();
     if (!$('historicalRegimesView').hidden) {
       historicalRegimesLoaded = false;
@@ -2034,6 +2093,11 @@
   $('historicalRegimesNav').addEventListener('click', () => showView('historical-regimes'));
   $('portfolioTransactionForm').addEventListener('submit', async (event) => {
     event.preventDefault();
+    if ($('portfolioAssetType').value === 'mutual_fund' && !$('portfolioSymbol').value) {
+      showToast('Select the exact mutual fund scheme from the fund name suggestions.');
+      $('portfolioFundName').focus();
+      return;
+    }
     const button = $('portfolioSaveButton');
     button.disabled = true;
     button.textContent = 'Saving…';
@@ -2042,7 +2106,12 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
         body: JSON.stringify({
           trade_date: $('portfolioTradeDate').value,
-          symbol: $('portfolioSymbol').value.trim(),
+          action: $('portfolioTransactionForm').dataset.editSymbol ? 'edit_holding' : undefined,
+          asset_type: $('portfolioAssetType').value,
+          fund_name: $('portfolioFundName').value,
+          nav: $('portfolioFundNav').value,
+          nav_date: $('portfolioNavDate').value,
+          symbol: $('portfolioTransactionForm').dataset.editSymbol || $('portfolioSymbol').value.trim(),
           side: $('portfolioSide').value,
           quantity: $('portfolioQuantity').value,
           price_inr: $('portfolioPrice').value,
@@ -2053,6 +2122,8 @@
       const payload = await response.json();
       if (!response.ok || payload.ok === false) throw new Error(payload.reason || payload.detail || `HTTP ${response.status}`);
       $('portfolioTransactionForm').reset();
+      updatePortfolioAssetFields();
+      delete $('portfolioTransactionForm').dataset.editSymbol;
       $('portfolioTradeDate').value = new Date().toISOString().slice(0, 10);
       $('portfolioFees').value = '0';
       portfolioLoaded = false;
@@ -2103,9 +2174,18 @@
     button.textContent = 'Validating…';
     try {
       if (file.size > 1500000) throw new Error('portfolio import too large');
+      const importBody = { file_name: file.name };
+      if (file.name.toLowerCase().endsWith('.xlsx')) {
+        if (!$('portfolioSnapshotDate').value) throw new Error('Choose the holdings snapshot date');
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = '';
+        for (const byte of bytes) binary += String.fromCharCode(byte);
+        importBody.xlsx_base64 = btoa(binary);
+        importBody.snapshot_date = $('portfolioSnapshotDate').value;
+      } else importBody.csv_text = await file.text();
       const response = await fetch('/api/portfolio/import', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ file_name: file.name, csv_text: await file.text() }),
+        body: JSON.stringify(importBody),
       });
       const payload = await response.json();
       if (!response.ok || payload.ok === false) throw new Error(payload.reason || payload.detail || `HTTP ${response.status}`);
@@ -2183,6 +2263,55 @@
   }));
   setTheme(localStorage.getItem('workspace-2-theme') || 'dark');
   $('portfolioTradeDate').value = new Date().toISOString().slice(0, 10);
+  fetch('/api/portfolio/symbols').then(response => response.json()).then(payload => {
+    $('portfolioSymbolOptions').innerHTML = (payload.symbols || []).map(row => `<option value="${escapeHtml(row.symbol)}">${escapeHtml(row.name)}</option>`).join('');
+  }).catch(() => showToast('Portfolio symbol list unavailable. Please refresh to retry.'));
+  function updatePortfolioAssetFields() {
+    const fund = $('portfolioAssetType').value === 'mutual_fund';
+    for (const id of ['portfolioFundName', 'portfolioFundNav', 'portfolioNavDate']) {
+      const input = $(id);
+      input.closest('label').hidden = !fund;
+      input.disabled = !fund;
+      input.required = fund;
+    }
+    $('portfolioSymbol').closest('label').hidden = fund;
+    $('portfolioSymbol').required = !fund;
+    $('portfolioSide').closest('label').hidden = fund;
+    if (fund) $('portfolioSide').value = 'BUY';
+    $('portfolioQuantity').closest('label').firstChild.textContent = fund ? 'Units' : 'Quantity';
+    $('portfolioPrice').closest('label').firstChild.textContent = fund ? 'Purchase / redemption NAV (₹)' : 'Price (₹)';
+  }
+  $('portfolioAssetType').addEventListener('change', () => {
+    $('portfolioSymbol').value = '';
+    $('portfolioFundName').value = '';
+    updatePortfolioAssetFields();
+  });
+  updatePortfolioAssetFields();
+  fetch('/api/portfolio/fund-schemes').then(response => response.json()).then(payload => {
+    if (!payload.ok) throw new Error('catalog unavailable');
+    const schemes = payload.schemes || [];
+    const fundLabel = row => `${row.name} · ${row.scheme_code} · ${row.isin}`;
+    $('portfolioFundOptions').innerHTML = schemes.map(row => {
+      const alias = /Franklin U\. S\. Opportunities/i.test(row.name) ? 'Franklin Templeton US Opportunities FOF' : '';
+      return `<option value="${escapeHtml(fundLabel(row))}">${escapeHtml(alias || row.name)}</option>`;
+    }).join('');
+    $('portfolioFundName').addEventListener('change', () => {
+      const scheme = schemes.find(row => fundLabel(row) === $('portfolioFundName').value);
+      $('portfolioSymbol').value = '';
+      if (!scheme) {
+        $('portfolioFundName').setCustomValidity('Select an exact scheme from the suggestions, including its plan and option.');
+        return;
+      }
+      $('portfolioFundName').setCustomValidity('');
+      $('portfolioAssetType').value = 'mutual_fund';
+      $('portfolioSymbol').value = scheme.isin || `MF-${scheme.scheme_code}`;
+      updatePortfolioAssetFields();
+    });
+    $('portfolioFundName').addEventListener('input', () => {
+      $('portfolioFundName').setCustomValidity('');
+      $('portfolioSymbol').value = '';
+    });
+  }).catch(() => showToast('Mutual fund list unavailable. You can still enter a fund manually.'));
   $('portfolioCashFlowDate').value = new Date().toISOString().slice(0, 10);
   const requestedView = new URLSearchParams(window.location.search).get('view');
   showView(['market-state', 'fno-positioning', 'stock-research', 'portfolio', 'historical-regimes'].includes(requestedView) ? requestedView : 'dashboard');

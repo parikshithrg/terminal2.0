@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import csv
+import base64
+import zipfile
+import xml.etree.ElementTree as ET
 import hashlib
 import io
 import math
@@ -21,7 +24,52 @@ PORTFOLIO_RISK_CONTRACT = "portfolio-risk-analysis-v1"
 CASH_FLOW_TYPES = {"CONTRIBUTION", "WITHDRAWAL", "DIVIDEND", "INTEREST", "TAX", "FEE"}
 
 
+def refresh_portfolio_prices(path: Path) -> dict[str, Any]:
+    """Store broad NSE prices outside the research candle universe."""
+    import requests
+    from datetime import timedelta
+    from workspace_engine import NSE_CM_FULL_TEMPLATE, NSE_CM_USER_AGENT
+    connection = connect_database(path)
+    try:
+        ensure_portfolio_schema(connection)
+        connection.execute('CREATE TABLE IF NOT EXISTS portfolio_market_prices (symbol TEXT PRIMARY KEY, close REAL NOT NULL, session_date TEXT NOT NULL, source TEXT NOT NULL)')
+        for offset in range(8):
+            session = date.today() - timedelta(days=offset)
+            if session.weekday() >= 5:
+                continue
+            url = NSE_CM_FULL_TEMPLATE.format(date=session.strftime('%d%m%Y'))
+            response = requests.get(url, timeout=20, headers={'User-Agent': NSE_CM_USER_AGENT})
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+            prices = {}
+            for raw in csv.DictReader(io.StringIO(response.text.lstrip('\ufeff'))):
+                row = {str(k).strip(): str(v).strip() for k, v in raw.items() if k}
+                try:
+                    close = float(row.get('CLOSE_PRICE', ''))
+                except ValueError:
+                    continue
+                if close > 0 and row.get('SYMBOL'):
+                    if row['SYMBOL'] not in prices or row.get('SERIES') == 'EQ':
+                        prices[row['SYMBOL']] = (row['SYMBOL'], close, session.isoformat(), url)
+            rows = list(prices.values())
+            if not rows:
+                continue
+            connection.executemany('INSERT OR REPLACE INTO portfolio_market_prices VALUES (?,?,?,?)', rows)
+            connection.commit()
+            return {'ok': True, 'symbols_priced': len(rows), 'as_of_date': session.isoformat()}
+        raise ValueError('no_recent_nse_price_file_available')
+    finally:
+        connection.close()
+
+
 def ensure_portfolio_schema(connection: sqlite3.Connection) -> None:
+    connection.execute('CREATE TABLE IF NOT EXISTS portfolio_market_prices (symbol TEXT PRIMARY KEY, close REAL NOT NULL, session_date TEXT NOT NULL, source TEXT NOT NULL)')
+    connection.execute('CREATE TABLE IF NOT EXISTS portfolio_symbol_catalog (symbol TEXT PRIMARY KEY, name TEXT NOT NULL)')
+    connection.execute("CREATE TABLE IF NOT EXISTS portfolio_snapshot_assets (symbol TEXT PRIMARY KEY, name TEXT, price REAL, price_date TEXT)")
+    connection.execute("""CREATE TABLE IF NOT EXISTS portfolio_funds (
+        symbol TEXT PRIMARY KEY, name TEXT NOT NULL, nav REAL NOT NULL,
+        nav_date TEXT NOT NULL)""")
     connection.execute(
         """CREATE TABLE IF NOT EXISTS portfolio_transactions (
                transaction_id TEXT PRIMARY KEY,
@@ -199,11 +247,29 @@ def record_portfolio_transaction(path: Path, payload: dict[str, Any]) -> dict[st
     connection = connect_database(path)
     try:
         ensure_portfolio_schema(connection)
+        action = payload.get("action")
+        if action in {"delete_holding", "edit_holding"}:
+            if not connection.execute("SELECT 1 FROM portfolio_transactions WHERE symbol=?", (symbol,)).fetchone():
+                raise ValueError("holding_not_found")
+            if action == "delete_holding":
+                connection.execute("DELETE FROM portfolio_transactions WHERE symbol=?", (symbol,))
+                connection.commit()
+                return {"ok": True, "symbol": symbol, "side": "REMOVED", "quantity": 0}
+            # A correction replaces the holding's ledger with the supplied opening balance.
+            connection.execute("DELETE FROM portfolio_transactions WHERE symbol=?", (symbol,))
+        if payload.get("asset_type") == "mutual_fund":
+            nav = _finite_positive(payload.get("nav"), "invalid_fund_nav")
+            nav_date = _parse_trade_date(payload.get("nav_date"))
+            connection.execute("INSERT OR REPLACE INTO portfolio_funds VALUES (?,?,?,?)",
+                               (symbol, str(payload.get("fund_name") or symbol)[:200], nav, nav_date))
         instrument = connection.execute(
             "SELECT display_name FROM instruments WHERE instrument_id=? AND kind='stock'",
             (f"stock:{symbol}",),
         ).fetchone()
+        fund = connection.execute("SELECT * FROM portfolio_funds WHERE symbol=?", (symbol,)).fetchone()
         if instrument is None:
+            instrument = connection.execute('SELECT name AS display_name FROM portfolio_symbol_catalog WHERE symbol=?', (symbol,)).fetchone()
+        if instrument is None and fund is None:
             raise ValueError("portfolio_symbol_not_in_workspace_store")
         transaction_id = uuid.uuid4().hex
         created_at = datetime.now(timezone.utc).isoformat()
@@ -221,7 +287,7 @@ def record_portfolio_transaction(path: Path, payload: dict[str, Any]) -> dict[st
             "contract_version": "portfolio-transaction-v1",
             "transaction_id": transaction_id,
             "symbol": symbol,
-            "display_name": instrument["display_name"],
+            "display_name": fund["name"] if fund else instrument["display_name"],
             "side": side,
             "trade_date": trade_date,
             "quantity": quantity,
@@ -270,7 +336,93 @@ def record_portfolio_cash_flow(path: Path, payload: dict[str, Any]) -> dict[str,
         connection.close()
 
 
+def import_portfolio_holdings_xlsx(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """Read cached XLSX cell values; holdings become explicitly dated opening balances."""
+    try:
+        data = base64.b64decode(payload["xlsx_base64"], validate=True)
+        if len(data) > 1_500_000:
+            raise ValueError("portfolio_import_too_large")
+        ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            if sum(item.file_size for item in archive.infolist()) > 20_000_000:
+                raise ValueError("portfolio_import_expanded_file_too_large")
+            strings = []
+            if "xl/sharedStrings.xml" in archive.namelist():
+                strings = ["".join(node.itertext()) for node in ET.fromstring(archive.read("xl/sharedStrings.xml"))]
+            records = []
+            assets = []
+            for sheet in sorted(name for name in archive.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")):
+                headers = None
+                sheet_text = ''.join(ET.fromstring(archive.read(sheet)).itertext())
+                # Zerodha also exports a combined sheet repeating the other sheets.
+                sheet_values = [strings[int(c.findtext('m:v', namespaces=ns))] for c in ET.fromstring(archive.read(sheet)).findall('.//m:c', ns) if c.get('t') == 's']
+                if any('Combined Holdings Statement' in value for value in sheet_values):
+                    continue
+                mutual_fund = any('Mutual Funds Holdings Statement' in value for value in sheet_values)
+                for row in ET.fromstring(archive.read(sheet)).findall(".//m:row", ns):
+                    values = {}
+                    for cell in row.findall("m:c", ns):
+                        column = ''.join(c for c in cell.get('r', '') if c.isalpha())
+                        value = cell.findtext("m:v", default="", namespaces=ns)
+                        if cell.get("t") == "s":
+                            value = strings[int(value)]
+                        elif cell.get("t") == "inlineStr":
+                            value = ''.join(cell.find("m:is", ns).itertext())
+                        values[column] = value
+                    normal = {key: _normalise_header(value) for key, value in values.items()}
+                    if any(v in {"quantity", "quantity_available"} for v in normal.values()) and any(v in {"instrument", "symbol", "tradingsymbol"} for v in normal.values()):
+                        headers = normal
+                        continue
+                    if headers:
+                        item = {headers[key]: value for key, value in values.items() if key in headers}
+                        symbol = _first_value(item, ("instrument", "symbol", "tradingsymbol"))
+                        if not symbol or str(symbol).lower() in {"total", "grand total"}:
+                            continue
+                        quantity = _finite_non_negative(_first_value(item, ('quantity', 'quantity_available')), "invalid_holdings_quantity")
+                        for key in ('quantity_pledged_(margin)', 'quantity_pledged_(loan)'):
+                            quantity += _finite_non_negative(item.get(key) or 0, 'invalid_pledged_quantity')
+                        if not quantity:
+                            continue
+                        price = _finite_positive(_first_value(item, ("avg._cost", "avg_cost", "average_cost", "average_price", "buy_average")), "holdings_average_cost_missing")
+                        name = str(symbol).strip()
+                        symbol = str(item.get('isin') or symbol).upper() if mutual_fund else name.upper()
+                        close = _finite_positive(item.get('previous_closing_price'), 'holdings_closing_price_missing')
+                        records.append((symbol, quantity, price))
+                        assets.append((symbol, name, close, mutual_fund))
+        if not records:
+            raise ValueError("zerodha_holdings_headers_or_rows_not_found")
+    except (KeyError, IndexError, zipfile.BadZipFile, ET.ParseError, TypeError) as error:
+        raise ValueError("invalid_holdings_xlsx") from error
+    symbols = [row[0] for row in records]
+    if len(symbols) != len(set(symbols)):
+        raise ValueError("duplicate_symbols_in_holdings_file")
+    snapshot_date = _parse_trade_date(payload.get("snapshot_date"))
+    # Existing positions must be resolved explicitly rather than doubled on import.
+    connection = connect_database(path)
+    try:
+        ensure_portfolio_schema(connection)
+        existing = set(_calculate_ledger(_transaction_rows(connection)))
+        if existing.intersection(symbols):
+            raise ValueError("holdings_already_in_ledger_delete_existing_positions_before_snapshot_import")
+        for symbol, name, close, mutual_fund in assets:
+            if mutual_fund:
+                connection.execute('INSERT OR REPLACE INTO portfolio_funds VALUES (?,?,?,?)', (symbol, name, close, snapshot_date))
+            else:
+                connection.execute('INSERT OR REPLACE INTO portfolio_snapshot_assets VALUES (?,?,?,?)', (symbol, name, close, snapshot_date))
+        connection.commit()
+    finally:
+        connection.close()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["symbol", "side", "trade_date", "quantity", "price"])
+    for symbol, quantity, price in records:
+        writer.writerow([symbol, "BUY", snapshot_date, quantity, price])
+    return import_portfolio_tradebook(path, {"csv_text": output.getvalue(), "file_name": str(payload.get("file_name") or "holdings.xlsx") + " (opening balances)"})
+
+
 def import_portfolio_tradebook(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    if payload.get("xlsx_base64"):
+        return import_portfolio_holdings_xlsx(path, payload)
     csv_text = str(payload.get("csv_text") or "")
     if not csv_text.strip():
         raise ValueError("portfolio_import_empty")
@@ -334,6 +486,8 @@ def import_portfolio_tradebook(path: Path, payload: dict[str, Any]) -> dict[str,
             )
         }
         unknown = sorted({row["symbol"] for row in raw_rows if row["symbol"] not in known})
+        known.update(row[0] for row in connection.execute('SELECT symbol FROM portfolio_funds UNION SELECT symbol FROM portfolio_snapshot_assets'))
+        unknown = sorted({row['symbol'] for row in raw_rows if row['symbol'] not in known})
         if unknown:
             raise ValueError(f"portfolio_import_unknown_symbols:{','.join(unknown[:20])}")
         import_id = uuid.uuid4().hex
@@ -392,7 +546,12 @@ def portfolio_overview(path: Path) -> dict[str, Any]:
                 "SELECT instrument_id,display_name FROM instruments WHERE kind='stock'"
             )
         }
+        names.update({row['symbol']: row['name'] for row in connection.execute('SELECT * FROM portfolio_symbol_catalog')})
         holdings = []
+        funds = {row["symbol"]: dict(row) for row in connection.execute("SELECT * FROM portfolio_funds")}
+        has_fund_metadata = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='portfolio_fund_metadata'").fetchone()
+        sourced_navs = {row['isin']: dict(row) for row in connection.execute('SELECT isin,nav,nav_date FROM portfolio_fund_metadata')} if has_fund_metadata else {}
+        snapshots = {row['symbol']: dict(row) for row in connection.execute('SELECT * FROM portfolio_snapshot_assets')}
         for symbol, position in ledger.items():
             if position["quantity"] <= 0:
                 continue
@@ -402,11 +561,26 @@ def portfolio_overview(path: Path) -> dict[str, Any]:
                 (f"stock:{symbol}",),
             ).fetchone()
             market_price = float(price_row["close"]) if price_row else None
+            broad_price = connection.execute('SELECT close,session_date FROM portfolio_market_prices WHERE symbol=?', (symbol,)).fetchone()
+            if broad_price and (price_row is None or broad_price['session_date'] >= price_row['session_date']):
+                price_row = broad_price
+                market_price = float(broad_price['close'])
+            if price_row is None and symbol in snapshots:
+                market_price = float(snapshots[symbol]['price'])
+                price_row = {'session_date': snapshots[symbol]['price_date']}
+            if symbol in funds:
+                price_row = {"session_date": funds[symbol]["nav_date"]}
+                market_price = float(funds[symbol]["nav"])
+                sourced = sourced_navs.get(symbol)
+                if sourced and sourced['nav_date'] > price_row['session_date']:
+                    market_price = _finite_positive(sourced['nav'], 'invalid_sourced_fund_nav')
+                    price_row = {'session_date': sourced['nav_date']}
             market_value = position["quantity"] * market_price if market_price is not None else None
             unrealised = market_value - position["cost_basis_inr"] if market_value is not None else None
             holdings.append({
                 "symbol": symbol,
-                "display_name": names.get(symbol, symbol),
+                "display_name": funds[symbol]["name"] if symbol in funds else names.get(symbol, symbol),
+                **({"asset_type": "mutual_fund"} if symbol in funds else {}),
                 "quantity": round(position["quantity"], 6),
                 "average_cost_inr": round(position["cost_basis_inr"] / position["quantity"], 4),
                 "cost_basis_inr": round(position["cost_basis_inr"], 2),
