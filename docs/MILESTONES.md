@@ -489,6 +489,54 @@ stock belongs in that cell. No order placement is in scope.
       and no-ordering boundaries, required DOM IDs/endpoints, unique IDs and
       responsive rules. Desktop, tablet and mobile layouts were browser-audited;
       operational setup and backup guidance now lives in the README.
-7. **Historical regimes.** Present policy cycles, analogues and regime evidence.
-8. **Cross-page consolidation and release audit.** Validate responsive behavior,
-   accessibility, data-state honesty, performance and operational instructions.
+7. **Historical regimes — complete.** Present policy cycles, analogues and regime
+   evidence in three increments:
+
+   1. **Completed-session timeline and transition ledger — complete.** Added the
+      versioned `historical-regimes-overview-v1` contract and
+      `/api/historical-regimes/overview`. It collapses the stored market-regime
+      ledger into contiguous runs, publishes current state, coverage,
+      transitions, family distribution, average trailing evidence and the most
+      recent classified sessions. The enabled Historical Regimes page renders
+      those records as an accessible proportional timeline, distribution, run
+      ledger and evidence table. Classification remains descriptive, source-
+      dated and independent of strategy results or forward outcomes;
+   2. **RBI policy-cycle and cross-asset overlays — complete.** Reused the
+      validated `india_policy_repo_rate_pct` event series already stored in the
+      independent market database: 66 official RBI decisions from February 2016
+      through October 2026, each with its original release URL, vintage and
+      retrieval timestamp. The v2 overview contract assigns each stored regime
+      session to the latest available policy decision, publishes the three policy
+      periods intersecting the current regime window and derives a transparent
+      easing/tightening/hold label solely from the direction of the latest repo
+      change. The page now shows the current 5.50% repo rate, decision history,
+      official RBI source links and the dominant observed regime in each policy
+      period. A separate descriptive cross-asset panel joins current India/U.S.
+      10-year yields and spread, USD/INR, Brent, India VIX and Nifty 50 tape from
+      their latest validated stored observations. Neither policy nor cross-asset
+      context alters the frozen market-regime classifier or claims causation; and
+   3. **Regime-conditioned analogues and release audit — complete.** Added the
+      `historical-regimes-overview-v3` analogue contract. It anchors once at the
+      first completed session of each contiguous regime episode, matches the
+      current regime family exactly and calculates 5-, 20- and 60-session Nifty
+      50 close returns only after each outcome has matured. Overlapping daily
+      labels are never treated as independent samples. Publication requires at
+      least five mature episodes in every window and 500 classified ledger
+      sessions. The current 100-session ledger therefore remains honestly
+      withheld: the live bullish family has one episode, one mature five-session
+      outcome and no mature 20- or 60-session outcomes. The page exposes the
+      rules, family catalogue, per-window sample counts and a six-check release
+      audit instead of substituting a forecast. Contract, gated-state, DOM ID,
+      endpoint, accessibility and responsive regressions are frozen.
+8. **Cross-page consolidation and release audit — complete.** Added the
+   versioned `workspace-release-audit-v1` contract and
+   `/api/workspace/release-audit`. Eleven fail-closed checks cover all six page
+   views, unique DOM IDs, navigation wiring, required API routes, 1100/760/520px
+   responsive rules, accessibility landmarks, removal of Expense Analyser,
+   SQLite quick-check integrity for both stores, completed-session freshness and
+   run/refresh/backup/recovery/release instructions. The Dashboard System
+   Integrity card publishes the decision and passed-check count. Missing stores
+   or stale market evidence withhold release. Workspace-wide release regressions
+   freeze the local-only, no-orders and no-runtime-proxy boundaries and enforce
+   an eight-second local audit budget. Desktop navigation and every completed
+   page were browser-audited against the live server.

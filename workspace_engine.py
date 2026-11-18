@@ -51,6 +51,7 @@ from workspace_analytics.jobs import (
     start_job,
     update_job,
 )
+from workspace_analytics.historical_regimes import historical_regimes_overview
 from workspace_analytics.metrics import maximum_drawdown_pct as _maximum_drawdown_pct
 from workspace_analytics.mean_reversion_strategies import (
     bollinger_mean_reversion_series as _bollinger_mean_reversion_component,

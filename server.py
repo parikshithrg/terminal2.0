@@ -38,6 +38,7 @@ from workspace_engine import (
     ensure_workspace_schema,
     factor_research,
     forward_move_labels,
+    historical_regimes_overview,
     moving_average_crossover,
     market_regime_history,
     nifty50_ytd,
@@ -74,6 +75,7 @@ from workspace_engine import (
     pullback_uptrend,
     zscore_mean_reversion,
 )
+from workspace_analytics.release_audit import workspace_release_audit
 
 
 ROOT = Path(__file__).resolve().parent
@@ -158,6 +160,11 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 return
             self._json(200 if payload.get("ok") else 207, payload)
             return
+        if path == "/api/workspace/release-audit":
+            self._local_contract(lambda: workspace_release_audit(
+                ROOT, self.market_db, self.snapshot_db,
+            ))
+            return
         if path == "/api/dashboard/overview":
             self._local_contract(lambda: dashboard_overview(self.market_db))
             return
@@ -169,6 +176,17 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/portfolio/risk-analysis":
             self._local_contract(lambda: portfolio_risk_analysis(self.market_db))
+            return
+        if path == "/api/historical-regimes/overview":
+            query = parse_qs(parsed.query)
+            try:
+                payload = historical_regimes_overview(
+                    self.market_db, limit=int(query.get("limit", ["500"])[0])
+                )
+            except ValueError as error:
+                self._json(400, {"ok": False, "reason": str(error)})
+                return
+            self._json(200, payload)
             return
         if path == "/api/market-sentiment/domestic-core":
             self._local_contract(lambda: domestic_core(self.market_db, self.snapshot_db))

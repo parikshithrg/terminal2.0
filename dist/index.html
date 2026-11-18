@@ -56,7 +56,7 @@
         <button class="nav-item" id="stockResearchNav" type="button"><span>04</span>Stock research</button>
         <div class="nav-group-label">Capital</div>
         <button class="nav-item" id="portfolioNav" type="button"><span>05</span>Portfolio</button>
-        <button class="nav-item future" type="button" disabled><span>06</span>Historical regimes</button>
+        <button class="nav-item" id="historicalRegimesNav" type="button"><span>06</span>Historical regimes</button>
       </nav>
       <div class="sidebar-foot">
         <span>DATA SOURCE</span>
@@ -175,6 +175,7 @@
             <div><span>Data contract</span><strong id="contractVersion">—</strong></div>
             <div><span>Latest session</span><strong id="latestSession">—</strong></div>
             <div><span>Data engine</span><strong id="engineState">Checking</strong></div>
+            <div><span>Release audit</span><strong><b id="releaseAuditState">Checking</b><small id="releaseAuditMeta">Workspace-wide checks pending</small></strong></div>
           </div>
           <p class="limitation">Observations are descriptive EOD evidence. They are not forecasts, orders, or automatic trade instructions.</p>
         </article>
@@ -601,6 +602,91 @@
                 <tbody id="portfolioTransactionsBody"><tr><td colspan="7">No transactions loaded.</td></tr></tbody>
               </table>
             </div>
+          </article>
+        </section>
+      </div>
+
+      <div class="page-view" id="historicalRegimesView" hidden>
+        <section class="page-heading">
+          <div>
+            <span class="eyebrow">CAPITAL / HISTORICAL REGIMES</span>
+            <h1>Market regime history</h1>
+          </div>
+          <div class="heading-meta"><span>Stored completed-session coverage</span><strong id="regimeHistoryAsOf">—</strong></div>
+        </section>
+
+        <section class="regime-history-summary" aria-label="Historical regime summary">
+          <article><span>CURRENT REGIME</span><strong id="regimeHistoryCurrent">—</strong><small id="regimeHistoryCurrentMeta">Awaiting ledger</small></article>
+          <article><span>OBSERVATIONS</span><strong id="regimeHistorySessions">—</strong><small>Stored classified sessions</small></article>
+          <article><span>WINDOW</span><strong id="regimeHistoryWindow">—</strong><small id="regimeHistoryWindowMeta">No coverage</small></article>
+          <article><span>TRANSITIONS</span><strong id="regimeHistoryTransitions">—</strong><small id="regimeHistorySegments">— contiguous runs</small></article>
+          <article><span>CLASSIFICATION</span><strong id="regimeHistoryStatus">—</strong><small>Descriptive evidence only</small></article>
+          <article><span>RBI POLICY</span><strong id="regimePolicyStatus">—</strong><small id="regimePolicyMeta">Awaiting validated decisions</small></article>
+        </section>
+
+        <section class="regime-history-grid">
+          <article class="card span-12 regime-timeline-card">
+            <header class="card-header"><div><span class="card-kicker">REGIME TIMELINE</span><h2>Contiguous completed-session states</h2></div><span class="micro-copy" id="regimeTimelineCoverage">—</span></header>
+            <div class="regime-timeline" id="regimeTimeline"><div class="empty-state">Historical regime timeline is unavailable.</div></div>
+            <div class="regime-timeline-legend"><span class="bullish">Bullish trend</span><span class="range">Range</span><span class="transition">Transition</span><span class="bearish">Bearish trend</span></div>
+            <p class="supplement-note">Each block is a contiguous run of stored sessions classified by the frozen market-regime contract. Block width reflects session count, not calendar days.</p>
+          </article>
+
+          <article class="card span-5">
+            <header class="card-header"><div><span class="card-kicker">DISTRIBUTION</span><h2>Time spent by regime</h2></div><span class="state-pill neutral" id="regimeDistributionStatus">DESCRIPTIVE</span></header>
+            <div class="regime-distribution" id="regimeDistribution"><div class="empty-state">No distribution available.</div></div>
+          </article>
+
+          <article class="card span-7">
+            <header class="card-header"><div><span class="card-kicker">RECENT TRANSITIONS</span><h2>Regime run ledger</h2></div><span class="micro-copy">Newest runs first</span></header>
+            <div class="regime-run-list" id="regimeRunList"><div class="empty-state">No regime runs available.</div></div>
+          </article>
+
+          <article class="card span-7 regime-policy-card">
+            <header class="card-header"><div><span class="card-kicker">POLICY CYCLES</span><h2>RBI repo-rate context</h2></div><span class="state-pill ready" id="regimePolicyCoverage">— EVENTS</span></header>
+            <div class="regime-policy-list" id="regimePolicyDecisionList"><div class="empty-state">Loading validated RBI decisions.</div></div>
+            <p class="supplement-note" id="regimePolicyMethod">Policy observations are context only and do not alter market-regime classification.</p>
+          </article>
+
+          <article class="card span-5 regime-cross-asset-card">
+            <header class="card-header"><div><span class="card-kicker">CROSS-ASSET CONTEXT</span><h2>Rates, FX and risk</h2></div><span class="micro-copy" id="regimeCrossAssetAsOf">—</span></header>
+            <div class="regime-cross-asset-list" id="regimeCrossAssetList"><div class="empty-state">Loading cross-asset observations.</div></div>
+            <p class="supplement-note">Latest validated observation on or before the classified session. These are contextual readings, not causal claims.</p>
+          </article>
+
+          <article class="card span-12 regime-analogue-card">
+            <header class="card-header"><div><span class="card-kicker">ANALOGUES</span><h2>Regime-conditioned forward outcomes</h2></div><span class="state-pill neutral" id="regimeAnalogueStatus">WITHHELD</span></header>
+            <div class="regime-analogue-layout">
+              <section>
+                <span class="card-kicker">CURRENT REGIME</span>
+                <h3 id="regimeAnalogueCurrent">—</h3>
+                <p id="regimeAnalogueDetail">Evaluating independent historical episodes.</p>
+                <div class="regime-analogue-windows" id="regimeAnalogueWindows"><div class="empty-state">No mature analogue windows.</div></div>
+              </section>
+              <section>
+                <span class="card-kicker">RELEASE AUDIT</span>
+                <h3 id="regimeAnalogueAuditTitle">Evidence gates</h3>
+                <div class="regime-analogue-audit" id="regimeAnalogueAudit"><div class="empty-state">Audit unavailable.</div></div>
+              </section>
+            </div>
+            <div class="portfolio-table-wrap compact regime-analogue-table-wrap">
+              <table class="portfolio-table regime-analogue-table">
+                <thead><tr><th>Regime family</th><th>Episode anchors</th><th>5 sessions</th><th>20 sessions</th><th>60 sessions</th></tr></thead>
+                <tbody id="regimeAnalogueBody"><tr><td colspan="5">No analogue catalogue available.</td></tr></tbody>
+              </table>
+            </div>
+            <p class="supplement-note" id="regimeAnalogueMethod">One anchor per contiguous regime episode; exact-family matching; trailing-only completed-session returns.</p>
+          </article>
+
+          <article class="card span-12">
+            <header class="card-header"><div><span class="card-kicker">EVIDENCE LEDGER</span><h2>Recent classified sessions</h2></div><span class="micro-copy" id="regimeEvidenceCount">— rows</span></header>
+            <div class="portfolio-table-wrap compact">
+              <table class="portfolio-table regime-evidence-table">
+                <thead><tr><th>Date</th><th>Regime</th><th>20-session return</th><th>Vs 200DMA</th><th>Volatility</th><th>50DMA breadth</th><th>200DMA breadth</th><th>Status</th></tr></thead>
+                <tbody id="regimeEvidenceBody"><tr><td colspan="8">Loading regime history.</td></tr></tbody>
+              </table>
+            </div>
+            <p class="portfolio-boundary" id="regimeHistoryBoundary">Descriptive completed-session evidence only. Strategy results and forward outcomes are excluded from classification.</p>
           </article>
         </section>
       </div>

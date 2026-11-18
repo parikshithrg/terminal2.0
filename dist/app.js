@@ -61,6 +61,7 @@
   let factorDialogSort = { key: 'return_pct', direction: 'desc' };
   let kiteConnected = false;
   let portfolioLoaded = false;
+  let historicalRegimesLoaded = false;
 
   function showToast(message) {
     const toast = $('toast');
@@ -94,6 +95,24 @@
     node.className = `source-state ${state}`;
     node.lastChild.textContent = label;
     text('engineState', label);
+  }
+
+  async function loadWorkspaceReleaseAudit() {
+    try {
+      const response = await fetchWithDeadline('/api/workspace/release-audit', { cache: 'no-store' }, 10000);
+      const payload = await response.json();
+      if (!response.ok || payload.ok !== true) throw new Error(payload.reason || `HTTP ${response.status}`);
+      const ready = payload.status === 'ready';
+      const node = $('releaseAuditState');
+      node.textContent = ready ? 'Ready' : 'Withheld';
+      node.className = ready ? 'positive' : 'negative';
+      text('releaseAuditMeta', `${Number(payload.passed || 0)} of ${Number(payload.total || 0)} checks · ${payload.contract_version || 'release contract'}`);
+      node.closest('strong').title = (payload.checks || []).filter((check) => !check.passed).map((check) => `${check.label}: ${check.detail}`).join(' · ') || 'All workspace release checks passed.';
+    } catch (error) {
+      text('releaseAuditState', 'Unavailable');
+      text('releaseAuditMeta', String(error.message || 'Release contract unavailable'));
+      $('releaseAuditState').className = 'negative';
+    }
   }
 
   function setKiteState(connected) {
@@ -1740,38 +1759,209 @@
     }
   }
 
+  const regimeFamilyLabels = {
+    bullish_trend: 'Bullish trend',
+    bearish_trend: 'Bearish trend',
+    transition: 'Transition',
+    range: 'Range',
+  };
+
+  function regimeFamilyLabel(value) {
+    return regimeFamilyLabels[value] || String(value || 'Unavailable').replaceAll('_', ' ');
+  }
+
+  function renderHistoricalRegimes(payload) {
+    const coverage = payload?.coverage || {};
+    const current = payload?.current || {};
+    const distribution = Array.isArray(payload?.distribution) ? payload.distribution : [];
+    const segments = Array.isArray(payload?.segments) ? payload.segments : [];
+    const evidence = Array.isArray(payload?.recent_evidence) ? payload.recent_evidence : [];
+    const policy = payload?.policy_cycle || {};
+    const crossAsset = payload?.cross_asset_context || {};
+    const analogues = payload?.analogues || {};
+    const statusLabels = coverage.classification_statuses || {};
+    text('regimeHistoryAsOf', displayDate(current.session_date || coverage.through_date));
+    text('regimeHistoryCurrent', regimeFamilyLabel(current.regime_family));
+    text('regimeHistoryCurrentMeta', `${String(current.trend_direction || '—').replaceAll('_', ' ')} trend · ${String(current.trend_strength || '—').replaceAll('_', ' ')} strength`);
+    text('regimeHistorySessions', Number(coverage.sessions || 0).toLocaleString('en-IN'));
+    text('regimeHistoryWindow', `${displayDate(coverage.from_date)} to ${displayDate(coverage.through_date)}`);
+    text('regimeHistoryWindowMeta', `${Number(coverage.segments || 0).toLocaleString('en-IN')} contiguous runs`);
+    text('regimeHistoryTransitions', Number(coverage.transitions || 0).toLocaleString('en-IN'));
+    text('regimeHistorySegments', `${Number(coverage.segments || 0).toLocaleString('en-IN')} segments`);
+    text('regimeHistoryStatus', `${Number(coverage.ranking_admissible_sessions || 0).toLocaleString('en-IN')} ranking-admissible · ${Number(statusLabels.descriptive_only || 0).toLocaleString('en-IN')} descriptive`);
+    const policyCurrent = policy?.current || {};
+    const policyChange = safeNumber(policyCurrent.change_bps);
+    text('regimePolicyStatus', policy.status === 'ready' && safeNumber(policyCurrent.repo_rate_pct) !== null ? `${Number(policyCurrent.repo_rate_pct).toFixed(2)}%` : 'GATED');
+    text('regimePolicyMeta', policy.status === 'ready'
+      ? `${String(policyCurrent.cycle_phase || 'hold').replaceAll('_', ' ')} · ${policyChange === null ? 'change unavailable' : `${policyChange > 0 ? '+' : ''}${policyChange.toFixed(0)} bps`} on ${displayDate(policyCurrent.observation_date)}`
+      : String(policy.required_source || 'Policy-cycle history is unavailable.').replaceAll('_', ' '));
+    text('regimeTimelineCoverage', `${displayDate(coverage.from_date)} to ${displayDate(coverage.through_date)} · ${Number(coverage.sessions || 0).toLocaleString('en-IN')} sessions`);
+    $('regimeTimeline').innerHTML = segments.length ? segments.map((segment) => {
+      const family = String(segment.regime_family || 'transition');
+      const label = regimeFamilyLabel(family);
+      const title = `${label}: ${displayDate(segment.from_date)} to ${displayDate(segment.through_date)}, ${segment.sessions} sessions`;
+      return `<button type="button" class="regime-timeline-segment ${escapeHtml(family)}" style="flex-grow:${Math.max(1, Number(segment.sessions || 1))}" aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">${Number(segment.sessions || 0) >= 4 ? `<span>${escapeHtml(label)}</span>` : ''}</button>`;
+    }).join('') : '<p class="regime-gate-message">No completed-session regime segments are stored.</p>';
+    text('regimeDistributionStatus', `${distribution.length.toLocaleString('en-IN')} families`);
+    text('regimeEvidenceCount', `${evidence.length.toLocaleString('en-IN')} rows`);
+    $('regimeDistribution').innerHTML = distribution.length ? distribution.map((row) => {
+      const family = String(row.regime_family || 'transition');
+      const share = Math.max(0, Math.min(100, Number(row.share_pct || 0)));
+      return `<article class="regime-distribution-row ${escapeHtml(family)}">
+        <header><strong>${escapeHtml(regimeFamilyLabel(family))}</strong><b>${Number(row.sessions || 0).toLocaleString('en-IN')} sessions · ${share.toFixed(1)}%</b></header>
+        <div class="regime-distribution-bar"><i style="width:${share}%"></i></div>
+        <footer><span>20-session return <b>${signedPercent(row.average_return_20d_pct)}</b></span><span>Volatility <b>${safeNumber(row.average_volatility_20d_pct) === null ? '—' : `${Number(row.average_volatility_20d_pct).toFixed(1)}%`}</b></span><span>50DMA breadth <b>${safeNumber(row.average_breadth_50dma_pct) === null ? '—' : `${Number(row.average_breadth_50dma_pct).toFixed(1)}%`}</b></span></footer>
+      </article>`;
+    }).join('') : '<p class="regime-gate-message">Distribution evidence is unavailable.</p>';
+    $('regimeRunList').innerHTML = segments.length ? segments.slice().reverse().slice(0, 8).map((segment) => `<article class="regime-run ${escapeHtml(segment.regime_family || 'transition')}">
+      <span><b>${escapeHtml(regimeFamilyLabel(segment.regime_family))}</b><small>${escapeHtml(displayDate(segment.from_date))} to ${escapeHtml(displayDate(segment.through_date))}</small></span>
+      <strong>${Number(segment.sessions || 0).toLocaleString('en-IN')}<small>sessions</small></strong>
+      <span><small>Avg 20-session return</small><b>${signedPercent(segment.average_return_20d_pct)}</b></span>
+      <span><small>Avg 50DMA breadth</small><b>${safeNumber(segment.average_breadth_50dma_pct) === null ? '—' : `${Number(segment.average_breadth_50dma_pct).toFixed(1)}%`}</b></span>
+    </article>`).join('') : '<p class="regime-gate-message">No recent regime runs are available.</p>';
+    const policyPeriods = Array.isArray(policy?.periods) ? policy.periods : [];
+    const policyCoverage = policy?.coverage || {};
+    text('regimePolicyCoverage', policy.status === 'ready' ? `${Number(policyCoverage.validated_events || 0).toLocaleString('en-IN')} EVENTS` : 'GATED');
+    $('regimePolicyDecisionList').innerHTML = policyPeriods.length ? policyPeriods.map((row) => {
+      const change = safeNumber(row.change_bps);
+      const changeLabel = change === null ? 'Change —' : `${change > 0 ? '+' : ''}${change.toFixed(0)} bps`;
+      return `<article class="regime-policy-decision ${escapeHtml(String(row.cycle_phase || 'hold'))}">
+        <time>${escapeHtml(displayDate(row.observation_date))}</time>
+        <span><b>${Number(row.repo_rate_pct).toFixed(2)}%</b><small>${escapeHtml(changeLabel)} · ${escapeHtml(String(row.decision || 'hold').replaceAll('_', ' '))}</small></span>
+        <span><b>${escapeHtml(String(row.cycle_phase || 'hold').replaceAll('_', ' '))}</b><small>${Number(row.classified_sessions || 0).toLocaleString('en-IN')} classified sessions</small></span>
+        <span><b>${escapeHtml(regimeFamilyLabel(row.dominant_regime))}</b><small>Dominant stored regime · avg tape ${signedPercent(row.average_return_20d_pct)}</small></span>
+        <a href="${escapeHtml(row.source_url)}" target="_blank" rel="noopener noreferrer" aria-label="Open official RBI source for ${escapeHtml(displayDate(row.observation_date))}">RBI source ↗</a>
+      </article>`;
+    }).join('') : `<div class="regime-gate-message"><strong>Validated RBI history unavailable</strong><p>${escapeHtml(String(policy.required_source || policy.reason || 'No policy series').replaceAll('_', ' '))}</p></div>`;
+    text('regimePolicyMethod', policy.methodology || 'Policy observations are context only and do not alter market-regime classification.');
+    const crossRows = Array.isArray(crossAsset?.observations) ? crossAsset.observations : [];
+    text('regimeCrossAssetAsOf', crossAsset.through_date ? `Through ${displayDate(crossAsset.through_date)}` : 'GATED');
+    $('regimeCrossAssetList').innerHTML = crossRows.length ? crossRows.map((row) => {
+      const value = safeNumber(row.value);
+      let valueLabel = '—';
+      if (value !== null) {
+        if (row.unit === 'basis_points') valueLabel = `${value.toFixed(0)} bps`;
+        else if (row.unit === 'percent' || row.unit === 'percent_change') valueLabel = `${value > 0 && row.unit === 'percent_change' ? '+' : ''}${value.toFixed(2)}%`;
+        else if (row.unit === 'USD/bbl') valueLabel = `$${value.toFixed(2)}`;
+        else valueLabel = value.toFixed(2);
+      }
+      const change = safeNumber(row.change_20d_pct);
+      return `<article><span>${escapeHtml(row.label)}</span><strong class="${row.unit === 'percent_change' ? researchTone(value) : ''}">${escapeHtml(valueLabel)}</strong><small>${change === null ? `As of ${escapeHtml(displayDate(row.observation_date))}` : `20-session ${signedPercent(change)} · ${escapeHtml(displayDate(row.observation_date))}`}</small></article>`;
+    }).join('') : '<div class="regime-gate-message"><strong>Cross-asset context unavailable</strong><p>No validated observations precede the classified session.</p></div>';
+    const analogueCurrent = analogues?.current || {};
+    const analogueWindows = analogueCurrent?.windows || {};
+    const analogueAudit = analogues?.release_audit || {};
+    const analogueChecks = Array.isArray(analogueAudit?.checks) ? analogueAudit.checks : [];
+    const analogueCatalogue = Array.isArray(analogues?.catalogue) ? analogues.catalogue : [];
+    const analogueReady = analogues.status === 'ready';
+    const analoguePill = $('regimeAnalogueStatus');
+    analoguePill.textContent = analogueReady ? 'DESCRIPTIVE READY' : 'WITHHELD';
+    analoguePill.className = `state-pill ${analogueReady ? 'ready' : 'neutral'}`;
+    text('regimeAnalogueCurrent', `${regimeFamilyLabel(analogues.current_regime)} · ${Number(analogueCurrent.episode_anchors || 0).toLocaleString('en-IN')} independent episode${Number(analogueCurrent.episode_anchors || 0) === 1 ? '' : 's'}`);
+    text('regimeAnalogueDetail', analogues.detail || 'No analogue conclusion is published without passing every evidence gate.');
+    $('regimeAnalogueWindows').innerHTML = [5, 20, 60].map((horizon) => {
+      const window = analogueWindows[String(horizon)] || {};
+      const sample = Number(window.sample_size || 0);
+      const ready = window.status === 'ready';
+      return `<article class="${ready ? 'ready' : 'gated'}">
+        <header><span>NEXT ${horizon} SESSIONS</span><b>${ready ? 'READY' : `${sample}/${Number(window.minimum_sample || 0)} SAMPLES`}</b></header>
+        <strong class="${researchTone(window.median_return_pct)}">${safeNumber(window.median_return_pct) === null ? '—' : signedPercent(window.median_return_pct)}</strong>
+        <small>Median return</small>
+        <footer><span>Positive <b>${safeNumber(window.positive_rate_pct) === null ? '—' : `${Number(window.positive_rate_pct).toFixed(1)}%`}</b></span><span>Worst <b>${safeNumber(window.worst_return_pct) === null ? '—' : signedPercent(window.worst_return_pct)}</b></span></footer>
+      </article>`;
+    }).join('');
+    text('regimeAnalogueAuditTitle', `${Number(analogueAudit.passed || 0)} of ${Number(analogueAudit.total || 0)} gates passed`);
+    $('regimeAnalogueAudit').innerHTML = analogueChecks.length ? analogueChecks.map((check) => `<article class="${check.passed ? 'passed' : 'failed'}">
+      <i aria-hidden="true">${check.passed ? '✓' : '!'}</i><span><b>${escapeHtml(check.label)}</b><small>${escapeHtml(check.detail)}</small></span>
+    </article>`).join('') : '<div class="regime-gate-message"><strong>Release audit unavailable</strong><p>The regime ledger is not available.</p></div>';
+    $('regimeAnalogueBody').innerHTML = analogueCatalogue.length ? analogueCatalogue.map((row) => {
+      const windowCell = (horizon) => {
+        const window = row?.windows?.[String(horizon)] || {};
+        const value = safeNumber(window.median_return_pct);
+        return `<span class="analogue-table-value ${researchTone(value)}">${value === null ? '—' : signedPercent(value)}<small>${Number(window.sample_size || 0)} mature · ${window.status === 'ready' ? 'ready' : 'gated'}</small></span>`;
+      };
+      return `<tr class="${row.regime_family === analogues.current_regime ? 'current' : ''}">
+        <td><strong>${escapeHtml(regimeFamilyLabel(row.regime_family))}</strong>${row.regime_family === analogues.current_regime ? '<small>Current family</small>' : ''}</td>
+        <td class="numeric">${Number(row.episode_anchors || 0).toLocaleString('en-IN')}</td>
+        <td>${windowCell(5)}</td><td>${windowCell(20)}</td><td>${windowCell(60)}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="5" class="portfolio-empty">No analogue catalogue is available.</td></tr>';
+    const rules = analogues?.rules || {};
+    text('regimeAnalogueMethod', rules.anchor
+      ? `${rules.anchor}. ${rules.match}. Forward windows: ${(rules.forward_windows_sessions || []).join(', ')} sessions. Minimum ${Number(rules.minimum_independent_episodes || 0)} independent episodes per window and ${Number(rules.minimum_ledger_sessions || 0).toLocaleString('en-IN')} classified sessions. Forward outcomes never alter the classifier.`
+      : 'One anchor per contiguous regime episode; exact-family matching; trailing-only completed-session returns.');
+    $('regimeEvidenceBody').innerHTML = evidence.length ? evidence.map((row) => `<tr>
+      <td>${escapeHtml(displayDate(row.session_date))}</td><td><strong>${escapeHtml(regimeFamilyLabel(row.regime_family))}</strong><small>${escapeHtml(String(row.trend_direction || '—').replaceAll('_', ' '))}</small></td>
+      <td class="numeric ${researchTone(row.market_return_20d_pct)}">${signedPercent(row.market_return_20d_pct)}</td>
+      <td class="numeric ${researchTone(row.market_distance_sma200_pct)}">${signedPercent(row.market_distance_sma200_pct)}</td>
+      <td class="numeric">${safeNumber(row.market_volatility_20d_pct) === null ? '—' : `${Number(row.market_volatility_20d_pct).toFixed(2)}%`}</td>
+      <td class="numeric">${safeNumber(row.market_breadth_50dma_pct) === null ? '—' : `${Number(row.market_breadth_50dma_pct).toFixed(1)}%`}</td>
+      <td class="numeric">${safeNumber(row.market_breadth_200dma_pct) === null ? '—' : `${Number(row.market_breadth_200dma_pct).toFixed(1)}%`}</td>
+      <td>${escapeHtml(String(row.classification_status || '—').replaceAll('_', ' '))}</td>
+    </tr>`).join('') : '<tr><td colspan="8" class="portfolio-empty">No completed-session regime evidence is stored.</td></tr>';
+    text('regimeEvidenceCount', `${evidence.length.toLocaleString('en-IN')} rows`);
+    text('regimeHistoryBoundary', payload?.methodology?.decision_boundary || 'Descriptive completed-session classifications only.');
+    historicalRegimesLoaded = true;
+  }
+
+  async function loadHistoricalRegimes(force = false) {
+    if (historicalRegimesLoaded && !force) return;
+    try {
+      const response = await fetchWithDeadline('/api/historical-regimes/overview?limit=500', { cache: 'no-store' });
+      const payload = await response.json();
+      if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.reason || `HTTP ${response.status}`);
+      renderHistoricalRegimes(payload);
+    } catch (error) {
+      $('regimeTimeline').innerHTML = `<p class="regime-gate-message">Historical regime evidence unavailable: ${escapeHtml(error.message)}</p>`;
+      $('regimeEvidenceBody').innerHTML = `<tr><td colspan="8" class="portfolio-empty">Historical regime evidence unavailable: ${escapeHtml(error.message)}</td></tr>`;
+      showToast(`Historical regimes unavailable: ${error.message}`);
+    }
+  }
+
   function showView(view) {
     const marketState = view === 'market-state';
     const fnoPositioning = view === 'fno-positioning';
     const stockResearch = view === 'stock-research';
     const portfolio = view === 'portfolio';
-    const dashboard = !marketState && !fnoPositioning && !stockResearch && !portfolio;
+    const historicalRegimes = view === 'historical-regimes';
+    const dashboard = !marketState && !fnoPositioning && !stockResearch && !portfolio && !historicalRegimes;
     $('dashboardView').hidden = !dashboard;
     $('marketStateView').hidden = !marketState;
     $('fnoPositioningView').hidden = !fnoPositioning;
     $('stockResearchView').hidden = !stockResearch;
     $('portfolioView').hidden = !portfolio;
+    $('historicalRegimesView').hidden = !historicalRegimes;
     $('dashboardView').classList.toggle('active', dashboard);
     $('marketStateView').classList.toggle('active', marketState);
     $('fnoPositioningView').classList.toggle('active', fnoPositioning);
     $('stockResearchView').classList.toggle('active', stockResearch);
     $('portfolioView').classList.toggle('active', portfolio);
+    $('historicalRegimesView').classList.toggle('active', historicalRegimes);
     $('dashboardNav').classList.toggle('active', dashboard);
     $('marketStateNav').classList.toggle('active', marketState);
     $('fnoNav').classList.toggle('active', fnoPositioning);
     $('stockResearchNav').classList.toggle('active', stockResearch);
     $('portfolioNav').classList.toggle('active', portfolio);
-    document.title = portfolio ? 'Portfolio · Workspace 2.0' : (stockResearch ? 'Stock Research · Workspace 2.0' : (fnoPositioning ? 'F&O Positioning · Workspace 2.0' : (marketState ? 'Market State · Workspace 2.0' : 'Workspace 2.0')));
+    $('historicalRegimesNav').classList.toggle('active', historicalRegimes);
+    document.title = historicalRegimes ? 'Historical Regimes · Workspace 2.0' : (portfolio ? 'Portfolio · Workspace 2.0' : (stockResearch ? 'Stock Research · Workspace 2.0' : (fnoPositioning ? 'F&O Positioning · Workspace 2.0' : (marketState ? 'Market State · Workspace 2.0' : 'Workspace 2.0'))));
     const url = new URL(window.location.href);
     if (!dashboard) url.searchParams.set('view', view);
     else url.searchParams.delete('view');
     window.history.replaceState({}, '', url);
     window.scrollTo({ top: 0, behavior: 'instant' });
     if (portfolio) void loadPortfolio();
+    if (historicalRegimes) void loadHistoricalRegimes();
   }
 
   $('themeToggle').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
-  $('refreshButton').addEventListener('click', () => loadDashboard(true, kiteConnected));
+  $('refreshButton').addEventListener('click', async () => {
+    await loadDashboard(true, kiteConnected);
+    await loadWorkspaceReleaseAudit();
+    if (!$('historicalRegimesView').hidden) {
+      historicalRegimesLoaded = false;
+      await loadHistoricalRegimes(true);
+    }
+  });
   $('kiteLoginButton').addEventListener('click', () => setKitePanel($('kitePanel').hidden));
   $('kiteCloseButton').addEventListener('click', () => setKitePanel(false));
   $('openKiteLoginButton').addEventListener('click', () => {
@@ -1841,6 +2031,7 @@
   $('fnoNav').addEventListener('click', () => showView('fno-positioning'));
   $('stockResearchNav').addEventListener('click', () => showView('stock-research'));
   $('portfolioNav').addEventListener('click', () => showView('portfolio'));
+  $('historicalRegimesNav').addEventListener('click', () => showView('historical-regimes'));
   $('portfolioTransactionForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     const button = $('portfolioSaveButton');
@@ -1994,7 +2185,8 @@
   $('portfolioTradeDate').value = new Date().toISOString().slice(0, 10);
   $('portfolioCashFlowDate').value = new Date().toISOString().slice(0, 10);
   const requestedView = new URLSearchParams(window.location.search).get('view');
-  showView(['market-state', 'fno-positioning', 'stock-research', 'portfolio'].includes(requestedView) ? requestedView : 'dashboard');
+  showView(['market-state', 'fno-positioning', 'stock-research', 'portfolio', 'historical-regimes'].includes(requestedView) ? requestedView : 'dashboard');
   loadKiteStatus();
+  loadWorkspaceReleaseAudit();
   loadDashboard(false);
 })();

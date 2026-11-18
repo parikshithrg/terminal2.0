@@ -257,9 +257,9 @@ semantic persistent caches; observable background-job progress; and SQLite
 concurrency/query tuning; plus versioned integration fixtures and published-result
 regressions.
 
-Two major product milestones remain: Historical regimes and cross-page
-consolidation/release audit. Expense Analyser was removed from
-the development roadmap at the user's direction.
+Two major product milestones remain: Historical regimes (active) and cross-page
+consolidation/release audit. Expense Analyser was removed from the development
+roadmap at the user's direction.
 
 All five Portfolio increments are complete. `workspace_analytics.portfolio` owns a
 local-only transaction ledger with validated known symbols, future-date and
@@ -294,4 +294,33 @@ Step 5 adds `portfolio-release-regression-fixture-v1` and release regressions fo
 the three public contracts, empty/gated states, required DOM IDs and endpoints,
 unique element IDs and responsive CSS. Desktop, tablet and mobile browser audits
 passed, and the README now documents setup, reconciliation, local persistence and
-backup boundaries. The next major milestone is Historical regimes.
+backup boundaries.
+
+Historical Regimes is complete. The versioned
+`historical-regimes-overview-v3` contract and
+`/api/historical-regimes/overview` publish the stored completed-session regime
+window, current state, contiguous transitions, family distribution and recent
+classification evidence. The enabled page renders an accessible proportional
+timeline, newest-first run ledger and evidence table. Increment 2 reuses the
+existing validated 66-event RBI repo-rate series (February 2016 through October
+2026), preserves every official RBI source URL and assigns regime sessions to the
+latest available policy event. It also publishes latest validated India/U.S.
+10-year yields and spread, USD/INR, Brent, India VIX and Nifty 50 tape as separate
+descriptive cross-asset context. These overlays do not change regime labels and
+make no causal claim. Increment 3 adds independent regime-entry episode anchors,
+exact-family analogue matching and trailing-only 5-, 20- and 60-session Nifty 50
+forward returns. A minimum of five mature episodes per window and 500 classified
+sessions is required before analogue publication. The present 100-session ledger
+therefore remains withheld, with its failed sample gates visible in the UI. The
+six-check release audit also verifies the frozen classifier, completed-session
+benchmark prices, non-overlapping anchors and strict outcome isolation.
+
+The final cross-page consolidation and release audit is complete. The
+`workspace-release-audit-v1` contract exposes eleven fail-closed checks through
+`/api/workspace/release-audit` and the Dashboard System Integrity card. It covers
+all six page views, unique DOM IDs, navigation and required routes, responsive
+breakpoints, accessibility landmarks, removal of Expense Analyser, SQLite
+integrity, completed-session freshness and operational documentation. Missing or
+stale data withholds the local release. The Workspace 2.0 development milestone
+list is now complete; the next work should be a user-selected enhancement or a
+fresh data/research milestone rather than another item from the existing list.

@@ -6,7 +6,8 @@ all live inside this project. PG-terminal does not need to be installed or runni
 
 ## Current scope
 
-- Dashboard, market state, F&O positioning, stock research and long-term Portfolio.
+- Dashboard, market state, F&O positioning, stock research, long-term Portfolio
+  and Historical Regimes.
 - Compact equal-card information layout; no chart dependency.
 - Dark and light themes.
 - Honest missing-data states.
@@ -226,6 +227,38 @@ These are relative level indicators, not claims that lower yields are always bet
 
 Run `python3 snapshot_store.py status` to inspect coverage and the most recent
 source-level update results without contacting any external service.
+
+## Backup and recovery
+
+Stop the local server before copying or restoring a database. Back up both
+`data/workspace_market.sqlite3` and `data/workspace_snapshots.sqlite3`; the first
+contains market history, research ledgers and Portfolio records, while the second
+contains official-source classifications, factors, filings and sovereign yields.
+Keep the two files from the same backup time. To restore, replace both files while
+the server is stopped, start `python3 server.py --port 8520`, then confirm
+`/api/workspace/release-audit` reports both SQLite integrity checks as passed.
+
+Kite credentials and access tokens are intentionally memory-only and are not part
+of a backup. A restored workspace therefore requires a fresh Kite login before a
+new authenticated EOD refresh.
+
+## Release verification
+
+Run the complete local regression suite before committing a release:
+
+```text
+python3 -m unittest discover -s tests -q
+node --check dist/app.js
+python3 -m py_compile server.py workspace_engine.py workspace_analytics/*.py
+git diff --check
+```
+
+With the server running, open `/api/workspace/release-audit`. The versioned
+`workspace-release-audit-v1` contract verifies all six page views, unique DOM
+identifiers, navigation, required page routes, accessibility landmarks,
+responsive breakpoints, removal of Expense Analyser, both SQLite databases,
+completed-session freshness and this operational guidance. A failed check keeps
+the local release decision withheld; it does not silently downgrade the check.
 
 ## Project rule
 
